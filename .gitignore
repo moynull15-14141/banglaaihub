@@ -1,0 +1,32 @@
+# Environment files — never commit these
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+build/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Qodo (AI coding assistant)
+.qodo/
+
+# Misc
+.turbo/
