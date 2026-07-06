@@ -6,6 +6,8 @@ declare global {
       id?: string;
       user?: AccessTokenPayload;
       validatedBody?: unknown;
+      validatedQuery?: unknown;
+      validatedParams?: unknown;
     }
   }
 }

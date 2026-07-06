@@ -2,9 +2,11 @@ import type { NextFunction, Request, Response } from 'express';
 import type { ZodType } from 'zod';
 import { ApiError } from '../utils/ApiError';
 
-export function validate(schema: ZodType) {
+type ValidationTarget = 'body' | 'query' | 'params';
+
+export function validate(schema: ZodType, target: ValidationTarget = 'body') {
   return function validateMiddleware(req: Request, _res: Response, next: NextFunction): void {
-    const result = schema.safeParse(req.body);
+    const result = schema.safeParse(req[target]);
 
     if (!result.success) {
       next(
@@ -21,7 +23,14 @@ export function validate(schema: ZodType) {
       return;
     }
 
-    req.validatedBody = result.data;
+    if (target === 'query') {
+      req.validatedQuery = result.data;
+    } else if (target === 'params') {
+      req.validatedParams = result.data;
+    } else {
+      req.validatedBody = result.data;
+    }
+
     next();
   };
 }

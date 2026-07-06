@@ -47,7 +47,7 @@ interface RequestContext {
   userAgent?: string;
 }
 
-async function getUserRoleNames(userId: string): Promise<string[]> {
+export async function getUserRoleNames(userId: string): Promise<string[]> {
   const userRoles = await prisma.userRole.findMany({
     where: { userId },
     include: { role: true },

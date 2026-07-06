@@ -2,9 +2,21 @@ import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
+import { validate } from '../middleware/validate';
+import {
+  listAuditLogsQuerySchema,
+  listReportsQuerySchema,
+  listUsersQuerySchema,
+  rejectReportSchema,
+  updateReportStatusSchema,
+  updateUserRolesSchema,
+  updateUserStatusSchema,
+} from '../validators/admin.validator';
+import { updateProfileSchema } from '../validators/user.validator';
 
 const router = Router();
 
+// --- Resource moderation ---
 router.get(
   '/resources/pending',
   authenticate,
@@ -23,26 +35,97 @@ router.post(
   authorize('resource:approve'),
   adminController.rejectResource,
 );
-router.get('/users', authenticate, authorize('user:manage'), adminController.listUsers);
-router.put(
-  '/users/:id/role',
+router.post(
+  '/resources/:id/feature',
+  authenticate,
+  authorize('resource:feature'),
+  adminController.featureResource,
+);
+router.post(
+  '/resources/:id/unfeature',
+  authenticate,
+  authorize('resource:feature'),
+  adminController.unfeatureResource,
+);
+router.post(
+  '/resources/:id/restore',
+  authenticate,
+  authorize('resource:edit_any'),
+  adminController.restoreResource,
+);
+
+// --- User management ---
+router.get(
+  '/users',
+  authenticate,
+  authorize('user:manage'),
+  validate(listUsersQuerySchema, 'query'),
+  adminController.listUsers,
+);
+router.get('/users/:id', authenticate, authorize('user:manage'), adminController.getUserById);
+router.patch(
+  '/users/:id',
+  authenticate,
+  authorize('user:manage'),
+  validate(updateProfileSchema),
+  adminController.updateUser,
+);
+router.patch(
+  '/users/:id/status',
+  authenticate,
+  authorize('user:ban'),
+  validate(updateUserStatusSchema),
+  adminController.updateUserStatus,
+);
+router.patch(
+  '/users/:id/roles',
   authenticate,
   authorize('user:role_change'),
-  adminController.changeUserRole,
+  validate(updateUserRolesSchema),
+  adminController.updateUserRoles,
 );
-router.post('/users/:id/ban', authenticate, authorize('user:ban'), adminController.banUser);
-router.get('/reports', authenticate, authorize('report:resolve'), adminController.listReports);
-router.post(
+router.delete('/users/:id', authenticate, authorize('user:ban'), adminController.deleteUser);
+
+// --- Reports ---
+router.get(
+  '/reports',
+  authenticate,
+  authorize('report:resolve'),
+  validate(listReportsQuerySchema, 'query'),
+  adminController.listReports,
+);
+router.get('/reports/:id', authenticate, authorize('report:resolve'), adminController.getReportById);
+router.patch(
+  '/reports/:id',
+  authenticate,
+  authorize('report:resolve'),
+  validate(updateReportStatusSchema),
+  adminController.updateReport,
+);
+router.patch(
   '/reports/:id/resolve',
   authenticate,
   authorize('report:resolve'),
   adminController.resolveReport,
 );
+router.patch(
+  '/reports/:id/reject',
+  authenticate,
+  authorize('report:reject'),
+  validate(rejectReportSchema),
+  adminController.rejectReport,
+);
+
+// --- Audit logs (read-only) ---
 router.get(
   '/audit-logs',
   authenticate,
   authorize('system:audit_log_view'),
+  validate(listAuditLogsQuerySchema, 'query'),
   adminController.listAuditLogs,
 );
+
+// --- Dashboard ---
+router.get('/dashboard', authenticate, authorize('admin:manage'), adminController.getDashboard);
 
 export default router;

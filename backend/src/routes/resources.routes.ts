@@ -2,24 +2,62 @@ import { Router } from 'express';
 import * as commentsController from '../controllers/comments.controller';
 import * as resourcesController from '../controllers/resources.controller';
 import { authenticate } from '../middleware/authenticate';
-import { upload } from '../middleware/upload';
+import { authorize } from '../middleware/authorize';
+import { datasetUpload } from '../middleware/upload';
+import { validate } from '../middleware/validate';
+import {
+  createCategorySchema,
+  createResourceSchema,
+  listResourcesQuerySchema,
+  updateCategorySchema,
+  updateResourceSchema,
+} from '../validators/resource.validator';
 
 // Mounted at /resources
 const resourcesRouter = Router();
 
-resourcesRouter.get('/', resourcesController.list);
-resourcesRouter.post('/', authenticate, resourcesController.create);
+resourcesRouter.get('/', validate(listResourcesQuerySchema, 'query'), resourcesController.list);
+resourcesRouter.post(
+  '/',
+  authenticate,
+  authorize('resource:create'),
+  validate(createResourceSchema),
+  resourcesController.create,
+);
 resourcesRouter.get('/:slug', resourcesController.getBySlug);
-resourcesRouter.put('/:slug', authenticate, resourcesController.update);
-resourcesRouter.delete('/:slug', authenticate, resourcesController.remove);
+// Ownership vs. resource:edit_any is a mixed check the static authorize()
+// middleware can't express — resolved inside ResourceService.update() instead.
+resourcesRouter.put(
+  '/:slug',
+  authenticate,
+  validate(updateResourceSchema),
+  resourcesController.update,
+);
+resourcesRouter.delete(
+  '/:slug',
+  authenticate,
+  authorize('resource:delete_own'),
+  resourcesController.remove,
+);
 resourcesRouter.post(
   '/:slug/upload',
   authenticate,
-  upload.single('file'),
+  authorize('resource:upload'),
+  datasetUpload.single('file'),
   resourcesController.uploadFile,
 );
-resourcesRouter.post('/:slug/bookmark', authenticate, resourcesController.addBookmark);
-resourcesRouter.delete('/:slug/bookmark', authenticate, resourcesController.removeBookmark);
+resourcesRouter.post(
+  '/:slug/bookmark',
+  authenticate,
+  authorize('resource:bookmark'),
+  resourcesController.addBookmark,
+);
+resourcesRouter.delete(
+  '/:slug/bookmark',
+  authenticate,
+  authorize('resource:bookmark'),
+  resourcesController.removeBookmark,
+);
 resourcesRouter.post('/:slug/report', authenticate, resourcesController.report);
 resourcesRouter.get('/:slug/comments', commentsController.list);
 resourcesRouter.post('/:slug/comments', authenticate, commentsController.create);
@@ -31,6 +69,28 @@ export const categoriesRouter = Router();
 categoriesRouter.get('/', resourcesController.listCategories);
 categoriesRouter.get('/:slug', resourcesController.getCategoryBySlug);
 categoriesRouter.get('/:slug/resources', resourcesController.listCategoryResources);
+// Not in doc 11 (read-only there) — added per Phase 4 spec as admin-only
+// taxonomy management, gated by the existing admin:manage permission.
+categoriesRouter.post(
+  '/',
+  authenticate,
+  authorize('admin:manage'),
+  validate(createCategorySchema),
+  resourcesController.createCategory,
+);
+categoriesRouter.put(
+  '/:id',
+  authenticate,
+  authorize('admin:manage'),
+  validate(updateCategorySchema),
+  resourcesController.updateCategory,
+);
+categoriesRouter.delete(
+  '/:id',
+  authenticate,
+  authorize('admin:manage'),
+  resourcesController.deleteCategory,
+);
 
 // Mounted at /tags — same reasoning as categories above.
 export const tagsRouter = Router();

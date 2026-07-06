@@ -5,6 +5,7 @@ export interface ResponseMeta {
   page?: number;
   limit?: number;
   hasNextPage?: boolean;
+  unread_count?: number;
 }
 
 export function sendSuccess<T>(
