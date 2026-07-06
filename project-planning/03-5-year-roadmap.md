@@ -1,7 +1,7 @@
 # Bangla AI Hub — 5-Year Roadmap
 **Document:** 03  
-**Version:** 1.0  
-**Status:** Foundation Draft  
+**Version:** 2.0  
+**Status:** Updated — MVP Scope Revised  
 **Date:** July 2026
 
 ---
@@ -33,25 +33,51 @@ Build a stable, high-quality version 1 of the platform that real users can depen
 - [ ] Basic admin panel
 - [ ] Domain setup: banglaai.dev (or equivalent)
 
-**Q2 2026 (Apr-Jun): MVP Build**
-- [ ] User authentication (email, Google, GitHub)
-- [ ] Resource submission system (basic)
-- [ ] Dataset directory with search
-- [ ] User profiles
-- [ ] Basic community forums
-- [ ] Research paper index (manual curation)
-- [ ] Bangladesh AI Index (manual)
+**Q2 2026 (Apr-Jun): MVP Build — Phase 1 (Core)**
 
-**Q3 2026 (Jul-Sep): Beta Launch**
-- [ ] Private beta with 50 selected community members
+> **⚠️ Scope Decision (v2.0):** Original MVP ছিল অনেক বড়। Solo founder হিসেবে ৬ মাসের কাজ ২-৩ মাসে শেষ করার লক্ষ্যে MVP-কে ৫টি phase-এ ভাগ করা হয়েছে।
+
+**MVP Phase 1 — Core Platform (Q2 2026):**
+- [ ] User authentication (email + Google login)
+- [ ] Resource Directory (tools, links, tutorials — submission + listing)
+- [ ] Dataset Directory (with metadata)
+- [ ] Global Search (MeiliSearch powered)
+- [ ] User Profile (public page + settings)
+- [ ] Admin Panel (content approval, user management)
+
+> Phase 1 শেষ = public beta launch করার জন্য ready।
+
+**MVP Phase 2 — Community (Q3 2026 প্রথমার্ধ):**
+- [ ] Forum / Discussion system
+- [ ] Comments on resources
+- [ ] Contributor verification flow
+
+**MVP Phase 3 — Research Papers (Q3 2026 দ্বিতীয়ার্ধ):**
+- [ ] Research paper index (manual curation)
+- [ ] Paper submission + moderation flow
+
+**MVP Phase 4 — Bangladesh AI Index (Q4 2026):**
+- [ ] Bangladesh AI Index dashboard
+- [ ] Organization + researcher profiles
+
+**MVP Phase 5 — Learning Center (2027):**
+- [ ] Structured learning paths
+- [ ] Tutorial series
+- [ ] Beginner resource collections
+
+---
+
+**Q3 2026 (Jul-Sep): Beta Launch + Phase 2 Rollout**
+- [ ] Private beta with 50 selected community members (Phase 1)
+- [ ] Phase 2 (Community features) development + rollout
 - [ ] Feedback collection and iteration
 - [ ] Content seeding (first 200 resources manually curated)
-- [ ] Community onboarding process
-- [ ] Contributor verification system design
+- [ ] Phase 3 (Research Papers) development start
 - [ ] Public launch preparation
 
-**Q4 2026 (Oct-Dec): Public Launch + First Growth**
+**Q4 2026 (Oct-Dec): Public Launch + Phase 4 Rollout**
 - [ ] Public launch of Bangla AI Hub V1
+- [ ] Phase 4 (Bangladesh AI Index) rollout
 - [ ] Community outreach (universities, Twitter/X, LinkedIn)
 - [ ] Partner with 5 universities for resource contributions
 - [ ] Launch contributor recognition program

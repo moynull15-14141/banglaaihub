@@ -1,5 +1,5 @@
 # Bangla AI Hub — Master Project Index
-**Version:** 1.0  
+**Version:** 2.0  
 **Status:** Active Development  
 **Started:** July 2026  
 **Founder:** MH Pollob
@@ -26,6 +26,12 @@ Every major decision must be traceable back to a document in this folder.
 | 07 | Go-to-Market Strategy | How we launch | ✅ Complete |
 | 08 | Dataset Acceptance Policy | What datasets we accept, how, and why | ✅ Complete |
 | 09 | Risk Analysis & Contingency Plans | What if things go wrong — Plan B for every risk | ✅ Complete |
+| 10 | Database Design | Database schema, ER diagram, 20 tables, indexes, MeiliSearch index | ✅ Complete |
+| 11 | API Specification | REST API endpoints, auth flow, error formats, rate limiting | ✅ Complete |
+| 12 | Frontend Architecture | Next.js 15 structure, routing, state management, SEO | ✅ Complete |
+| 13 | Security Specification | JWT, RBAC, rate limiting, input validation, backup strategy | ✅ Complete |
+| 14 | Development Standards | Folder structure, naming, Git workflow, coding guidelines, email events | ✅ Complete |
+| 15 | Project Initialization Guide | Repo scaffold spec — folder structure, config files, npm packages, terminal commands | 🟡 Draft — Awaiting Execution |
 
 ---
 
@@ -82,6 +88,7 @@ If any answer is NO → Reconsider.
 | Backend hosting | Render | July 2026 |
 | Database | Supabase (PostgreSQL only — not full BaaS) | July 2026 |
 | File storage | Cloudflare R2 | July 2026 |
+| Search | MeiliSearch | July 2026 |
 
 > Supabase শুধু cloud-hosted PostgreSQL হিসেবে ব্যবহার হবে। Supabase Auth, Storage, বা Edge Functions ব্যবহার হবে না।
 
@@ -96,6 +103,8 @@ If any answer is NO → Reconsider.
 | July 2026 | Documents 08–09 added (Dataset Policy + Risk Analysis) |
 | July 2026 | Document 04 updated (v2.0) — Final tech stack decided: Custom Backend + Supabase PostgreSQL + Render + Vercel |
 | July 2026 | Document 09 updated — Risk 3, 5, 6 updated to reflect new stack |
+| July 2026 | Documents 10–14 added — Technical implementation specs (Database Design, API Specification, Frontend Architecture, Security Specification, Development Standards) |
+| July 2026 | Document 15 added — Project Initialization Guide (repo scaffold spec, not yet executed) |
 
 ---
 

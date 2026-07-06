@@ -1,0 +1,24 @@
+{
+  "name": "bangla-ai-hub",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n FRONTEND,BACKEND -c blue,green \"npm:dev:frontend\" \"npm:dev:backend\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "lint": "npm run lint --prefix frontend && npm run lint --prefix backend",
+    "typecheck": "npm run typecheck --prefix frontend && npm run typecheck --prefix backend",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "install:all": "npm install --prefix frontend && npm install --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "prettier": "^3.3.0"
+  }
+}
