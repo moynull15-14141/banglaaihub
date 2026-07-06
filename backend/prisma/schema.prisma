@@ -1,0 +1,530 @@
+// Prisma schema for Bangla AI Hub
+// Source of truth: project-planning/10-database-design.md — do not add/remove/rename
+// tables or columns here without updating that document first.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+//
+// Only fields where doc 10 documents a genuinely closed, app-internal set of
+// values were made into enums. Fields left as String are deliberately open
+// (RBAC role/permission names, ISO language codes, free-text log actions) —
+// see the Phase 1 explanation for the reasoning behind each one.
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  active
+  suspended
+  banned
+
+  @@map("user_status")
+}
+
+enum ResourceType {
+  dataset
+  paper
+  tool
+  tutorial
+  prompt
+  project
+  news
+
+  @@map("resource_type")
+}
+
+enum ResourceStatus {
+  pending
+  approved
+  rejected
+  flagged
+
+  @@map("resource_status")
+}
+
+enum Visibility {
+  public
+  unlisted
+  private
+
+  @@map("visibility")
+}
+
+enum ToolType {
+  library
+  api
+  model
+  prompt
+  tutorial
+
+  @@map("tool_type")
+}
+
+enum CommentStatus {
+  visible
+  hidden
+  deleted
+
+  @@map("comment_status")
+}
+
+enum ReportReason {
+  spam
+  copyright
+  wrong_data
+  duplicate
+  inappropriate
+
+  @@map("report_reason")
+}
+
+enum ReportStatus {
+  pending
+  reviewed
+  resolved
+  dismissed
+
+  @@map("report_status")
+}
+
+enum NotificationType {
+  submission_approved
+  submission_rejected
+  comment_reply
+  mention
+  reputation_milestone
+  weekly_digest
+
+  @@map("notification_type")
+}
+
+enum AnalyticsEventType {
+  view
+  download
+  share
+  bookmark
+
+  @@map("analytics_event_type")
+}
+
+// ---------------------------------------------------------------------------
+// RBAC — roles, permissions, and their junction tables
+// ---------------------------------------------------------------------------
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(50)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.Uuid
+  roleId     Int      @map("role_id")
+  assignedBy String?  @map("assigned_by") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+
+  user           User  @relation("UserRoles", fields: [userId], references: [id])
+  role           Role  @relation(fields: [roleId], references: [id])
+  assignedByUser User? @relation("RoleAssignedBy", fields: [assignedBy], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+model User {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String     @unique @db.VarChar(255)
+  username        String     @unique(map: "idx_users_username") @db.VarChar(50)
+  displayName     String?    @map("display_name") @db.VarChar(100)
+  avatarUrl       String?    @map("avatar_url")
+  bio             String?
+  institution     String?    @db.VarChar(200)
+  location        String?    @db.VarChar(100)
+  websiteUrl      String?    @map("website_url")
+  githubUrl       String?    @map("github_url")
+  scholarUrl      String?    @map("scholar_url")
+  reputationScore Int        @default(0) @map("reputation_score")
+  isVerified      Boolean    @default(false) @map("is_verified")
+  emailVerified   Boolean    @default(false) @map("email_verified")
+  status          UserStatus @default(active)
+  passwordHash    String?    @map("password_hash")
+  googleId        String?    @unique @map("google_id") @db.VarChar(100)
+  githubId        String?    @unique @map("github_id") @db.VarChar(100)
+  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  authoredResources Resource[]          @relation("ResourceAuthor")
+  approvedResources Resource[]          @relation("ResourceApprover")
+  bookmarks         Bookmark[]
+  comments          Comment[]
+  reportsFiled      Report[]            @relation("ReportReporter")
+  reportsReviewed   Report[]            @relation("ReportReviewer")
+  notifications     Notification[]
+  reputationEvents  ReputationEvent[]
+  auditLogs         AuditLog[]
+  refreshTokens     RefreshToken[]
+  resourceAnalytics ResourceAnalytics[]
+  userRoles         UserRole[]          @relation("UserRoles")
+  rolesAssigned     UserRole[]          @relation("RoleAssignedBy")
+  passwordHistory   PasswordHistory[]
+
+  @@index([deletedAt], map: "idx_users_deleted")
+  @@map("users")
+}
+
+// Added in Phase 3 — doc 10 didn't originally include this table, but doc 13
+// requires rejecting a new password if it matches any of the user's last 5.
+model PasswordHistory {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_password_history_user")
+  @@map("password_history")
+}
+
+// ---------------------------------------------------------------------------
+// Resources (universal base) and its three extension tables
+// ---------------------------------------------------------------------------
+
+model Resource {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug          String         @unique(map: "idx_resources_slug") @db.VarChar(200)
+  title         String         @db.VarChar(300)
+  description   String?
+  type          ResourceType
+  categoryId    Int?           @map("category_id")
+  authorId      String?        @map("author_id") @db.Uuid
+  status        ResourceStatus @default(pending)
+  visibility    Visibility     @default(public)
+  language      String         @default("bn") @db.VarChar(10)
+  thumbnailUrl  String?        @map("thumbnail_url")
+  externalUrl   String?        @map("external_url")
+  license       String?        @db.VarChar(100)
+  viewCount     Int            @default(0) @map("view_count")
+  downloadCount Int            @default(0) @map("download_count")
+  bookmarkCount Int            @default(0) @map("bookmark_count")
+  featured      Boolean        @default(false)
+  approvedBy    String?        @map("approved_by") @db.Uuid
+  approvedAt    DateTime?      @map("approved_at") @db.Timestamptz(6)
+  publishedAt   DateTime?      @map("published_at") @db.Timestamptz(6)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  category Category? @relation(fields: [categoryId], references: [id])
+  author   User?     @relation("ResourceAuthor", fields: [authorId], references: [id])
+  approver User?     @relation("ResourceApprover", fields: [approvedBy], references: [id])
+
+  dataset          Dataset?
+  paper            Paper?
+  tool             Tool?
+  resourceTags     ResourceTag[]
+  bookmarks        Bookmark[]
+  comments         Comment[]
+  reports          Report[]
+  analytics        ResourceAnalytics[]
+  reputationEvents ReputationEvent[]
+
+  @@index([status], map: "idx_resources_status")
+  @@index([type], map: "idx_resources_type")
+  @@index([authorId], map: "idx_resources_author")
+  @@index([deletedAt], map: "idx_resources_deleted")
+  @@map("resources")
+}
+
+model Dataset {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId     String   @unique @map("resource_id") @db.Uuid
+  version        String   @default("v1.0") @db.VarChar(20)
+  fileUrl        String?  @map("file_url")
+  fileSizeBytes  BigInt?  @map("file_size_bytes")
+  fileFormat     String?  @map("file_format") @db.VarChar(50)
+  recordCount    Int?     @map("record_count")
+  annotationType String?  @map("annotation_type") @db.VarChar(100)
+  domain         String?  @db.VarChar(100)
+  collectionYear Int?     @map("collection_year")
+  dataSource     String?  @map("data_source")
+  methodology    String?
+  benchmarkScore Json?    @map("benchmark_score") @db.JsonB
+  checksumSha256 String?  @map("checksum_sha256") @db.VarChar(64)
+  parentId       String?  @map("parent_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  resource Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  parent   Dataset?  @relation("DatasetVersions", fields: [parentId], references: [id])
+  versions Dataset[] @relation("DatasetVersions")
+
+  @@map("datasets")
+}
+
+model Paper {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId    String   @unique @map("resource_id") @db.Uuid
+  abstract      String?
+  authors       String[]
+  venue         String?  @db.VarChar(200)
+  year          Int?
+  doi           String?  @db.VarChar(200)
+  arxivId       String?  @map("arxiv_id") @db.VarChar(50)
+  pdfUrl        String?  @map("pdf_url")
+  codeUrl       String?  @map("code_url")
+  citationCount Int      @default(0) @map("citation_count")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@map("papers")
+}
+
+model Tool {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId     String    @unique @map("resource_id") @db.Uuid
+  toolType       ToolType? @map("tool_type")
+  platform       String?   @db.VarChar(100)
+  demoUrl        String?   @map("demo_url")
+  installCommand String?   @map("install_command")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@map("tools")
+}
+
+// ---------------------------------------------------------------------------
+// Categories & tags
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  slug        String   @unique(map: "idx_categories_slug") @db.VarChar(100)
+  description String?
+  parentId    Int?     @map("parent_id")
+  icon        String?  @db.VarChar(50)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  resources Resource[]
+
+  @@map("categories")
+}
+
+model Tag {
+  id         Int    @id @default(autoincrement())
+  name       String @unique @db.VarChar(100)
+  slug       String @unique @db.VarChar(100)
+  usageCount Int    @default(0) @map("usage_count")
+
+  resourceTags ResourceTag[]
+
+  @@map("tags")
+}
+
+model ResourceTag {
+  resourceId String @map("resource_id") @db.Uuid
+  tagId      Int    @map("tag_id")
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, tagId])
+  @@map("resource_tags")
+}
+
+// ---------------------------------------------------------------------------
+// Social — bookmarks, comments, reports
+// ---------------------------------------------------------------------------
+
+model Bookmark {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@map("bookmarks")
+}
+
+model Comment {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId  String        @map("resource_id") @db.Uuid
+  authorId    String?       @map("author_id") @db.Uuid
+  parentId    String?       @map("parent_id") @db.Uuid
+  content     String
+  isPinned    Boolean       @default(false) @map("is_pinned")
+  upvoteCount Int           @default(0) @map("upvote_count")
+  status      CommentStatus @default(visible)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  resource Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  author   User?     @relation(fields: [authorId], references: [id])
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Report {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reporterId  String?      @map("reporter_id") @db.Uuid
+  resourceId  String?      @map("resource_id") @db.Uuid
+  reason      ReportReason
+  description String?
+  status      ReportStatus @default(pending)
+  reviewedBy  String?      @map("reviewed_by") @db.Uuid
+  reviewedAt  DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  reporter User?     @relation("ReportReporter", fields: [reporterId], references: [id])
+  resource Resource? @relation(fields: [resourceId], references: [id])
+  reviewer User?     @relation("ReportReviewer", fields: [reviewedBy], references: [id])
+
+  @@map("reports")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, reputation ledger, audit log, refresh tokens, analytics
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String           @db.VarChar(200)
+  message   String?
+  link      String?
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead], map: "idx_notifications_user")
+  @@map("notifications")
+}
+
+model ReputationEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  eventType   String   @map("event_type") @db.VarChar(50)
+  points      Int
+  resourceId  String?  @map("resource_id") @db.Uuid
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id])
+
+  @@index([userId], map: "idx_reputation_user")
+  @@map("reputation_events")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  targetType String?  @map("target_type") @db.VarChar(50)
+  targetId   String?  @map("target_id")
+  oldValue   Json?    @map("old_value") @db.JsonB
+  newValue   Json?    @map("new_value") @db.JsonB
+  ipAddress  String?  @map("ip_address") @db.Inet
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([actorId], map: "idx_audit_actor")
+  @@index([targetType, targetId], map: "idx_audit_target")
+  @@map("audit_logs")
+}
+
+model RefreshToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revoked   Boolean   @default(false)
+  ipAddress String?   @map("ip_address") @db.Inet
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model ResourceAnalytics {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId String             @map("resource_id") @db.Uuid
+  eventType  AnalyticsEventType @map("event_type")
+  userId     String?            @map("user_id") @db.Uuid
+  ipAddress  String?            @map("ip_address") @db.Inet
+  referrer   String?
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id])
+
+  @@map("resource_analytics")
+}

@@ -1,0 +1,7 @@
+node_modules
+dist
+.next
+coverage
+project-planning
+*.md
+backend/src/generated

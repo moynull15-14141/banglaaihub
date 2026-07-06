@@ -1,0 +1,39 @@
+# Environment files — never commit these
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+build/
+
+# IDE / Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Qodo (AI coding assistant)
+.qodo/
+
+# TypeScript / test artifacts
+*.tsbuildinfo
+coverage/
+.vercel/
+
+# Misc
+.turbo/
