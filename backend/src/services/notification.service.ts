@@ -1,4 +1,5 @@
 import { prisma } from '../config/database';
+import type { NotificationType } from '../generated/prisma/client';
 import { ApiError } from '../utils/ApiError';
 import type { PaginationMeta, PaginationParams } from '../utils/pagination';
 import { buildPaginationMeta } from '../utils/pagination';
@@ -26,6 +27,26 @@ function toNotificationDto(notification: {
 }
 
 export class NotificationService {
+  // First real write-side caller of this table (see ContributorApplicationService) —
+  // the read endpoints (list/markRead/markAllRead) predate any code that creates rows.
+  static async create(input: {
+    userId: string;
+    type: NotificationType;
+    title: string;
+    message?: string | null;
+    link?: string | null;
+  }): Promise<void> {
+    await prisma.notification.create({
+      data: {
+        userId: input.userId,
+        type: input.type,
+        title: input.title,
+        message: input.message ?? null,
+        link: input.link ?? null,
+      },
+    });
+  }
+
   static async list(
     userId: string,
     pagination: PaginationParams,

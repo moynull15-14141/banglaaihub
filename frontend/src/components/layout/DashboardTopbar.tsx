@@ -1,9 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, Menu, Settings, User as UserIcon } from 'lucide-react';
+import { LogOut, Menu, Settings, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 import { useState } from 'react';
-import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import {
@@ -16,14 +15,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { DashboardSidebarNav } from '@/components/layout/DashboardSidebarNav';
+import { canAccessAdminPanel } from '@/components/admin/adminNavLinks';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useLogout } from '@/lib/hooks/useLogout';
+import { useContributorNavStatus } from '@/lib/hooks/useContributorNavStatus';
 import { ROUTES } from '@/lib/constants/routes';
 
 export function DashboardTopbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user } = useAuth();
   const handleLogout = useLogout();
+  const showAdminPanelLink = canAccessAdminPanel(user?.roles ?? []);
+  const contributorNavStatus = useContributorNavStatus();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/60 sm:px-6">
@@ -79,6 +82,22 @@ export function DashboardTopbar() {
                 Settings
               </Link>
             </DropdownMenuItem>
+            {contributorNavStatus ? (
+              <DropdownMenuItem asChild>
+                <Link href={contributorNavStatus.href}>
+                  <Sparkles />
+                  {contributorNavStatus.label}
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+            {showAdminPanelLink ? (
+              <DropdownMenuItem asChild>
+                <Link href={ROUTES.admin}>
+                  <ShieldCheck />
+                  Admin Panel
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={handleLogout}>
               <LogOut />

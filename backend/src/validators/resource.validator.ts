@@ -15,7 +15,7 @@ const RESOURCE_TYPES = [
 ] as const;
 const LANGUAGES = ['bn', 'en', 'both'] as const;
 const RESOURCE_STATUSES = ['pending', 'approved', 'rejected', 'flagged'] as const;
-const SORT_OPTIONS = ['newest', 'popular', 'downloads', 'bookmarks'] as const;
+const SORT_OPTIONS = ['newest', 'oldest', 'popular', 'downloads', 'bookmarks'] as const;
 
 export const createResourceSchema = z.object({
   title: z.string().min(5).max(300).trim(),

@@ -13,6 +13,11 @@ import {
   updateUserStatusSchema,
 } from '../validators/admin.validator';
 import { updateProfileSchema } from '../validators/user.validator';
+import { listResourcesQuerySchema } from '../validators/resource.validator';
+import {
+  contributorApplicationDecisionSchema,
+  listContributorApplicationsQuerySchema,
+} from '../validators/contributor-application.validator';
 
 const router = Router();
 
@@ -21,6 +26,7 @@ router.get(
   '/resources/pending',
   authenticate,
   authorize('resource:approve'),
+  validate(listResourcesQuerySchema, 'query'),
   adminController.listPendingResources,
 );
 router.post(
@@ -114,6 +120,42 @@ router.patch(
   authorize('report:reject'),
   validate(rejectReportSchema),
   adminController.rejectReport,
+);
+
+// --- Contributor applications ---
+router.get(
+  '/contributor-applications',
+  authenticate,
+  authorize('contributor_application:review'),
+  validate(listContributorApplicationsQuerySchema, 'query'),
+  adminController.listContributorApplications,
+);
+router.get(
+  '/contributor-applications/:id',
+  authenticate,
+  authorize('contributor_application:review'),
+  adminController.getContributorApplicationById,
+);
+router.patch(
+  '/contributor-applications/:id/approve',
+  authenticate,
+  authorize('contributor_application:review'),
+  validate(contributorApplicationDecisionSchema),
+  adminController.approveContributorApplication,
+);
+router.patch(
+  '/contributor-applications/:id/reject',
+  authenticate,
+  authorize('contributor_application:review'),
+  validate(contributorApplicationDecisionSchema),
+  adminController.rejectContributorApplication,
+);
+router.patch(
+  '/contributor-applications/:id/request-revision',
+  authenticate,
+  authorize('contributor_application:review'),
+  validate(contributorApplicationDecisionSchema),
+  adminController.requestContributorApplicationRevision,
 );
 
 // --- Audit logs (read-only) ---

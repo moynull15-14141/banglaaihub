@@ -32,3 +32,14 @@ const AVATAR_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const AVATAR_MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 export const avatarUpload = createUploadMiddleware(AVATAR_MIME_TYPES, AVATAR_MAX_FILE_SIZE);
+
+// Contributor-application sample works / supporting documents — same dataset
+// types plus PDF (CVs, sample papers), capped much smaller than a dataset
+// upload since these are portfolio samples, not the resource payload itself.
+const CONTRIBUTOR_SAMPLE_MIME_TYPES = [...DATASET_MIME_TYPES, 'application/pdf'];
+const CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+export const contributorSampleUpload = createUploadMiddleware(
+  CONTRIBUTOR_SAMPLE_MIME_TYPES,
+  CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE,
+);

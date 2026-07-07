@@ -130,6 +130,8 @@ function toTagDto(tag: TagRow): Record<string, unknown> {
 
 function resolveSort(sort?: string): Prisma.ResourceOrderByWithRelationInput {
   switch (sort) {
+    case 'oldest':
+      return { createdAt: 'asc' };
     case 'popular':
       return { viewCount: 'desc' };
     case 'downloads':

@@ -43,6 +43,59 @@ export class EmailService {
     });
   }
 
+  static async sendContributorApplicationSubmitted(to: string, userName: string): Promise<void> {
+    await EmailService.send(
+      to,
+      'We received your contributor application',
+      'contributorApplicationSubmitted',
+      { userName },
+    );
+  }
+
+  static async sendContributorApplicationWithdrawn(to: string, userName: string): Promise<void> {
+    await EmailService.send(
+      to,
+      'Your contributor application was withdrawn',
+      'contributorApplicationWithdrawn',
+      { userName },
+    );
+  }
+
+  static async sendContributorApplicationApproved(to: string, userName: string): Promise<void> {
+    await EmailService.send(
+      to,
+      'Your contributor application was approved',
+      'contributorApplicationApproved',
+      { userName },
+    );
+  }
+
+  static async sendContributorApplicationRejected(
+    to: string,
+    userName: string,
+    feedback?: string,
+  ): Promise<void> {
+    await EmailService.send(
+      to,
+      'An update on your contributor application',
+      'contributorApplicationRejected',
+      { userName, feedback: feedback ?? 'No additional feedback was provided.' },
+    );
+  }
+
+  static async sendContributorApplicationNeedsRevision(
+    to: string,
+    userName: string,
+    feedback?: string,
+  ): Promise<void> {
+    await EmailService.send(
+      to,
+      'Your contributor application needs a small revision',
+      'contributorApplicationNeedsRevision',
+      { userName, feedback: feedback ?? 'Please review your application and resubmit.' },
+    );
+  }
+
   private static async send(
     to: string,
     subject: string,

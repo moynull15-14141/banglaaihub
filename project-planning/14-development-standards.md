@@ -41,6 +41,7 @@ banglaai-backend/
 │   │   ├── search.routes.js
 │   │   ├── comments.routes.js
 │   │   ├── notifications.routes.js
+│   │   ├── contributor-applications.routes.js
 │   │   └── admin.routes.js
 │   │
 │   ├── controllers/
@@ -50,6 +51,7 @@ banglaai-backend/
 │   │   ├── search.controller.js
 │   │   ├── comments.controller.js
 │   │   ├── notifications.controller.js
+│   │   ├── contributor-application.controller.js
 │   │   └── admin.controller.js
 │   │
 │   ├── services/               ← Business logic layer
@@ -60,12 +62,14 @@ banglaai-backend/
 │   │   ├── email.service.js    ← Email sending
 │   │   ├── storage.service.js  ← Cloudflare R2 uploads
 │   │   ├── notification.service.js
-│   │   └── reputation.service.js
+│   │   ├── reputation.service.js
+│   │   └── contributor-application.service.js
 │   │
 │   ├── validators/             ← Zod schemas
 │   │   ├── auth.validator.js
 │   │   ├── resource.validator.js
-│   │   └── user.validator.js
+│   │   ├── user.validator.js
+│   │   └── contributor-application.validator.js
 │   │
 │   ├── utils/
 │   │   ├── slugify.js          ← Unique slug generation
@@ -81,7 +85,10 @@ banglaai-backend/
 │   │   ├── submissionApproved.html
 │   │   ├── submissionRejected.html
 │   │   ├── commentReply.html
-│   │   └── weeklyDigest.html
+│   │   ├── weeklyDigest.html
+│   │   ├── contributorApplicationApproved.html
+│   │   ├── contributorApplicationRejected.html
+│   │   └── contributorApplicationNeedsRevision.html
 │   │
 │   └── app.js                  ← Express app setup (middleware stack)
 │
@@ -319,6 +326,11 @@ These are the email notifications the system sends. Each maps to a template file
 | Weekly digest | Every Monday 9:00 AM | `weeklyDigest.html` |
 | Account suspended | Admin suspends account | `accountSuspended.html` |
 | Report resolved | Report reporter got a decision | `reportResolved.html` |
+| Contributor application approved | Editor+ approves a contributor application | `contributorApplicationApproved.html` |
+| Contributor application rejected | Editor+ rejects a contributor application | `contributorApplicationRejected.html` |
+| Contributor application needs revision | Editor+ requests changes to an application | `contributorApplicationNeedsRevision.html` |
+| Contributor application submitted | Applicant submits (confirmation) | `contributorApplicationSubmitted.html` |
+| Contributor application withdrawn | Applicant withdraws their own application | `contributorApplicationWithdrawn.html` |
 
 ### Email Service Pattern
 

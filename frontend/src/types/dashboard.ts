@@ -6,4 +6,6 @@ export interface UserDashboardStats {
   bookmark_count: number;
   unread_notifications: number;
   reputation_score: number;
+  total_views: number;
+  total_downloads: number;
 }

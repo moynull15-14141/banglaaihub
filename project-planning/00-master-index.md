@@ -105,6 +105,7 @@ If any answer is NO → Reconsider.
 | July 2026 | Document 09 updated — Risk 3, 5, 6 updated to reflect new stack |
 | July 2026 | Documents 10–14 added — Technical implementation specs (Database Design, API Specification, Frontend Architecture, Security Specification, Development Standards) |
 | July 2026 | Document 15 added — Project Initialization Guide (repo scaffold spec, not yet executed) |
+| July 2026 | Contributor Application System added — self-serve `user` → `contributor` path replacing ad-hoc admin promotion. Docs 10, 11, 13, 14 updated (new `contributor_applications` table, new API section, RBAC permissions matrix correction, new email events); doc 03's Phase 2 "Contributor verification flow" item pulled forward into this work. |
 
 ---
 

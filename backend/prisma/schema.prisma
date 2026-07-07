@@ -102,8 +102,23 @@ enum NotificationType {
   mention
   reputation_milestone
   weekly_digest
+  contributor_application_approved
+  contributor_application_rejected
+  contributor_application_needs_revision
+  contributor_application_submitted
+  contributor_application_withdrawn
 
   @@map("notification_type")
+}
+
+enum ContributorApplicationStatus {
+  pending
+  approved
+  rejected
+  needs_revision
+  withdrawn
+
+  @@map("contributor_application_status")
 }
 
 enum AnalyticsEventType {
@@ -185,6 +200,15 @@ model User {
   websiteUrl      String?    @map("website_url")
   githubUrl       String?    @map("github_url")
   scholarUrl      String?    @map("scholar_url")
+  kaggleUrl       String?    @map("kaggle_url")
+  huggingfaceUrl  String?    @map("huggingface_url")
+  linkedinUrl     String?    @map("linkedin_url")
+  orcidId         String?    @map("orcid_id") @db.VarChar(19)
+  xUrl            String?    @map("x_url")
+  // Reserved for future async enrichment (GitHub/Kaggle/HuggingFace/Scholar
+  // stats, AI trust score) — unused today, nullable so it needs no migration
+  // when that work starts. See project-planning/10-database-design.md.
+  externalStats   Json?      @map("external_stats") @db.JsonB
   reputationScore Int        @default(0) @map("reputation_score")
   isVerified      Boolean    @default(false) @map("is_verified")
   emailVerified   Boolean    @default(false) @map("email_verified")
@@ -197,20 +221,22 @@ model User {
   updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
 
-  authoredResources Resource[]          @relation("ResourceAuthor")
-  approvedResources Resource[]          @relation("ResourceApprover")
-  bookmarks         Bookmark[]
-  comments          Comment[]
-  reportsFiled      Report[]            @relation("ReportReporter")
-  reportsReviewed   Report[]            @relation("ReportReviewer")
-  notifications     Notification[]
-  reputationEvents  ReputationEvent[]
-  auditLogs         AuditLog[]
-  refreshTokens     RefreshToken[]
-  resourceAnalytics ResourceAnalytics[]
-  userRoles         UserRole[]          @relation("UserRoles")
-  rolesAssigned     UserRole[]          @relation("RoleAssignedBy")
-  passwordHistory   PasswordHistory[]
+  authoredResources               Resource[]               @relation("ResourceAuthor")
+  approvedResources               Resource[]               @relation("ResourceApprover")
+  bookmarks                       Bookmark[]
+  comments                        Comment[]
+  reportsFiled                    Report[]                 @relation("ReportReporter")
+  reportsReviewed                 Report[]                 @relation("ReportReviewer")
+  notifications                   Notification[]
+  reputationEvents                ReputationEvent[]
+  auditLogs                       AuditLog[]
+  refreshTokens                   RefreshToken[]
+  resourceAnalytics               ResourceAnalytics[]
+  userRoles                       UserRole[]               @relation("UserRoles")
+  rolesAssigned                   UserRole[]               @relation("RoleAssignedBy")
+  passwordHistory                 PasswordHistory[]
+  contributorApplications         ContributorApplication[] @relation("ContributorApplicant")
+  contributorApplicationsReviewed ContributorApplication[] @relation("ContributorApplicationReviewer")
 
   @@index([deletedAt], map: "idx_users_deleted")
   @@map("users")
@@ -228,6 +254,46 @@ model PasswordHistory {
 
   @@index([userId], map: "idx_password_history_user")
   @@map("password_history")
+}
+
+// ---------------------------------------------------------------------------
+// Contributor applications — the self-serve path from `user` to `contributor`.
+// See project-planning/10-database-design.md for the full field rationale.
+// ---------------------------------------------------------------------------
+
+model ContributorApplication {
+  id                     String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String                       @map("user_id") @db.Uuid
+  status                 ContributorApplicationStatus @default(pending)
+  fullName               String                       @map("full_name")
+  profession             String
+  organization           String
+  country                String
+  bio                    String
+  expertise              String
+  experience             String
+  motivation             String
+  sampleWorks            String?                      @map("sample_works")
+  sampleFileUrls         String[]                     @map("sample_file_urls")
+  supportingDocumentUrls String[]                     @map("supporting_document_urls")
+  // Immutable copy of the applicant's profile links as of submission — the
+  // canonical, editable values live on User; this snapshot is what the
+  // reviewer actually saw and decided against.
+  profileSnapshot        Json                         @map("profile_snapshot") @db.JsonB
+  reviewerId             String?                      @map("reviewer_id") @db.Uuid
+  reviewNotes            String?                      @map("review_notes")
+  feedbackToApplicant    String?                      @map("feedback_to_applicant")
+  reviewedAt             DateTime?                    @map("reviewed_at") @db.Timestamptz(6)
+  submittedAt            DateTime                     @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  createdAt              DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  applicant User  @relation("ContributorApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer  User? @relation("ContributorApplicationReviewer", fields: [reviewerId], references: [id])
+
+  @@index([userId], map: "idx_contributor_applications_user")
+  @@index([status], map: "idx_contributor_applications_status")
+  @@map("contributor_applications")
 }
 
 // ---------------------------------------------------------------------------

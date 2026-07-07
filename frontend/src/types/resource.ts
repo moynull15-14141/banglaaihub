@@ -9,7 +9,7 @@ export type ResourceType =
 
 export type ResourceLanguage = 'bn' | 'en' | 'both';
 export type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
-export type ResourceSort = 'newest' | 'popular' | 'downloads' | 'bookmarks';
+export type ResourceSort = 'newest' | 'oldest' | 'popular' | 'downloads' | 'bookmarks';
 export type ToolType = 'library' | 'api' | 'model' | 'prompt' | 'tutorial';
 
 export interface ResourceAuthor {
@@ -98,6 +98,10 @@ export interface ListResourcesParams {
   type?: ResourceType;
   category?: string;
   language?: ResourceLanguage;
+  // Only honored by admin-authenticated requests (the public listing always
+  // forces 'approved' server-side regardless of this param) — see
+  // GET /admin/resources/pending, which now forwards it.
+  status?: ResourceStatus;
   sort?: ResourceSort;
   featured?: true;
   page?: number;

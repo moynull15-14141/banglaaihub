@@ -100,27 +100,59 @@ super_admin
 
 ### Permissions Matrix
 
+> **Updated (Contributor Application System):** `Submit resource` moved from `user` to
+> `contributor`. Previously `user` could call `POST /resources` directly; now becoming a
+> `contributor` — via an approved Contributor Application, see the new section below — is
+> what unlocks it. This was a deliberate tightening, not a bug: the platform now has a
+> self-serve application flow instead of relying on admins hand-picking contributors.
+
 | Permission | guest | user | contributor | verified | moderator | editor | admin | super_admin |
 |-----------|-------|------|-------------|----------|-----------|--------|-------|-------------|
 | View resources | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | View user profiles | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Register / Login | ✅ | — | — | — | — | — | — | — |
-| Submit resource | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Submit resource | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Edit own resource | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Delete own resource | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Bookmark resources | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Post comments | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Report resources | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Apply to become a contributor | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Upload files (datasets) | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Edit any resource | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Delete any comment | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Approve/reject resources | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Review contributor applications | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Resolve reports | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Manage users | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Ban users | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Change roles | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Manage admins | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | System configuration | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+### Contributor Application System
+
+Since `user` no longer has `Submit resource`, the path from `user` → `contributor` is a
+self-serve application, not an admin hand-promotion:
+
+1. Any `user` submits a Contributor Application (`POST /api/v1/contributor-applications`) —
+   profile info, portfolio links (GitHub/Kaggle/Hugging Face/Google Scholar/LinkedIn/personal
+   website/ORCID/X), motivation, and optional sample-work files.
+2. An `editor`-or-above reviews it in the admin panel — full profile, portfolio-link badges
+   (Connected / Not Provided; links are never fetched), the applicant's existing contribution
+   stats (submitted/approved/rejected/pending, approval rate, reputation), and placeholder
+   quality indicators for metrics that aren't automated yet.
+3. **Approve** grants the `contributor` role additively (the `user` role is kept, not
+   replaced) — same role-assignment table (`user_roles`) as the existing admin
+   `PATCH /admin/users/:id/roles` endpoint, which remains available as a manual override.
+   **Reject** or **Request Revision** record `review_notes` (internal only) and
+   `feedback_to_applicant` (applicant-visible). Every decision writes an `audit_logs` row,
+   creates a notification, and sends an email.
+4. Spam control: one active (`pending`/`needs_revision`) application per user, a 30-day
+   cooldown after rejection before reapplying, and a dedicated rate limit (see below).
+
+See `project-planning/10-database-design.md` for the `contributor_applications` table and
+`project-planning/11-api-specification.md` for the full endpoint list.
 
 ### Express Middleware Implementation
 
@@ -173,6 +205,7 @@ Storage: Redis (in production), memory (in development)
 | `POST /auth/refresh` | 15 min | 10 | per IP |
 | `POST /resources` (submit) | 1 hour | 10 | per user |
 | `POST /resources/:id/report` | 1 day | 20 | per user |
+| `POST /contributor-applications` (apply) | 1 day | 3 | per user |
 | `GET /search` | 1 min | 60 | per IP |
 | All other `GET` | 1 min | 300 | per IP |
 | Admin endpoints | 1 min | 30 | per user |

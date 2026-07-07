@@ -1,10 +1,11 @@
-import { ComingSoonPage } from '@/components/common/ComingSoonPage';
+import { Suspense } from 'react';
+import { LoadingScreen } from '@/components/common/LoadingScreen';
+import { ResourceModerationView } from '@/components/admin/moderation/ResourceModerationView';
 
 export default function AdminPendingPage() {
   return (
-    <ComingSoonPage
-      title="Pending Review"
-      description="Submissions awaiting approval will be listed here."
-    />
+    <Suspense fallback={<LoadingScreen label="Loading moderation queue…" />}>
+      <ResourceModerationView />
+    </Suspense>
   );
 }

@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { AdminService } from '../services/admin.service';
+import { ContributorApplicationService } from '../services/contributor-application.service';
 import { ReportService } from '../services/report.service';
 import { ResourceService } from '../services/resources.service';
 import { UserService } from '../services/users.service';
@@ -17,6 +18,11 @@ import type {
   UpdateUserStatusInput,
 } from '../validators/admin.validator';
 import type { UpdateProfileInput } from '../validators/user.validator';
+import type { ListResourcesQuery } from '../validators/resource.validator';
+import type {
+  ContributorApplicationDecisionInput,
+  ListContributorApplicationsQuery,
+} from '../validators/contributor-application.validator';
 
 function requireUser(req: Request): AccessTokenPayload {
   if (!req.user) {
@@ -36,8 +42,15 @@ function requireParam(req: Request, name: string): string {
 // --- Resource moderation ------------------------------------------------------
 
 export async function listPendingResources(req: Request, res: Response): Promise<void> {
+  const query = (req.validatedQuery ?? {}) as ListResourcesQuery;
   const pagination = parsePagination(req.query as Record<string, string>);
-  const result = await ResourceService.list({ status: 'pending' }, pagination, req.user);
+  // Defaults to 'pending' (this endpoint's original, sole behavior) when no
+  // status is specified — additive only, existing callers are unaffected.
+  const result = await ResourceService.list(
+    { ...query, status: query.status ?? 'pending' },
+    pagination,
+    req.user,
+  );
   sendSuccess(res, result.data, result.meta);
 }
 
@@ -165,6 +178,56 @@ export async function rejectReport(req: Request, res: Response): Promise<void> {
     body.reason,
   );
   sendSuccess(res, report);
+}
+
+// --- Contributor applications ------------------------------------------------------
+
+export async function listContributorApplications(req: Request, res: Response): Promise<void> {
+  const query = (req.validatedQuery ?? {}) as ListContributorApplicationsQuery;
+  const pagination = parsePagination(req.query as Record<string, string>);
+  const result = await ContributorApplicationService.listForAdmin(query, pagination);
+  sendSuccess(res, result.data, result.meta);
+}
+
+export async function getContributorApplicationById(req: Request, res: Response): Promise<void> {
+  const application = await ContributorApplicationService.getByIdForAdmin(requireParam(req, 'id'));
+  sendSuccess(res, application);
+}
+
+export async function approveContributorApplication(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const body = (req.validatedBody ?? {}) as ContributorApplicationDecisionInput;
+  const application = await ContributorApplicationService.approve(
+    requireParam(req, 'id'),
+    actor.userId,
+    body,
+  );
+  sendSuccess(res, application);
+}
+
+export async function rejectContributorApplication(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const body = (req.validatedBody ?? {}) as ContributorApplicationDecisionInput;
+  const application = await ContributorApplicationService.reject(
+    requireParam(req, 'id'),
+    actor.userId,
+    body,
+  );
+  sendSuccess(res, application);
+}
+
+export async function requestContributorApplicationRevision(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const actor = requireUser(req);
+  const body = (req.validatedBody ?? {}) as ContributorApplicationDecisionInput;
+  const application = await ContributorApplicationService.requestRevision(
+    requireParam(req, 'id'),
+    actor.userId,
+    body,
+  );
+  sendSuccess(res, application);
 }
 
 // --- Audit logs -------------------------------------------------------------------

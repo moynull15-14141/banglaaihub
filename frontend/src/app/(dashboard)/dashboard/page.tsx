@@ -7,6 +7,8 @@ import {
   Bookmark,
   CheckCircle2,
   Clock,
+  Download,
+  Eye,
   FilePlus2,
   ListChecks,
   Settings,
@@ -16,10 +18,13 @@ import { PageContainer } from '@/components/common/PageContainer';
 import { LoadingScreen } from '@/components/common/LoadingScreen';
 import { ErrorState } from '@/components/common/ErrorState';
 import { StatCard } from '@/components/common/StatCard';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { BecomeContributorCard } from '@/components/contributor/BecomeContributorCard';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useMyDashboard } from '@/lib/hooks/useMyDashboard';
+import { hasContributorAccess } from '@/lib/constants/roles';
 import { ROUTES } from '@/lib/constants/routes';
 
 const QUICK_LINKS = [
@@ -50,22 +55,39 @@ export default function DashboardPage() {
     );
   }
 
+  const contributorStatusLabel = !user
+    ? null
+    : user.roles.includes('verified_contributor')
+      ? 'Verified Contributor'
+      : hasContributorAccess(user.roles)
+        ? 'Contributor'
+        : null;
+
   return (
     <PageContainer>
-      <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
-        Welcome back{user ? `, ${user.display_name ?? user.username}` : ''}
-      </h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
+          Welcome back{user ? `, ${user.display_name ?? user.username}` : ''}
+        </h1>
+        {contributorStatusLabel ? <Badge variant="success">{contributorStatusLabel}</Badge> : null}
+      </div>
       <p className="mt-1 text-muted-foreground">
         Here&apos;s an overview of your activity on Bangla AI Hub.
       </p>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard icon={ListChecks} label="Total submissions" value={stats.total_submissions} />
         <StatCard icon={CheckCircle2} label="Published" value={stats.published_resources} />
         <StatCard icon={Clock} label="Pending review" value={stats.pending_resources} />
         <StatCard icon={XCircle} label="Rejected" value={stats.rejected_resources} />
+        <StatCard icon={Eye} label="Total views" value={stats.total_views} />
+        <StatCard icon={Download} label="Total downloads" value={stats.total_downloads} />
         <StatCard icon={Bookmark} label="Bookmarks" value={stats.bookmark_count} />
         <StatCard icon={Award} label="Reputation" value={stats.reputation_score} />
+      </div>
+
+      <div className="mt-6">
+        <BecomeContributorCard />
       </div>
 
       <Card className="mt-6">

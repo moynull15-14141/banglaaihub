@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const ORCID_REGEX = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
+
 // Only fields doc 10's User model marks as profile-editable — never role,
 // permission, status, email, username, or reputation.
 export const updateProfileSchema = z.object({
@@ -10,6 +12,11 @@ export const updateProfileSchema = z.object({
   website_url: z.string().url().optional(),
   github_url: z.string().url().optional(),
   scholar_url: z.string().url().optional(),
+  kaggle_url: z.string().url().optional(),
+  huggingface_url: z.string().url().optional(),
+  linkedin_url: z.string().url().optional(),
+  orcid_id: z.string().regex(ORCID_REGEX, 'ORCID must look like 0000-0002-1825-0097').optional(),
+  x_url: z.string().url().optional(),
 });
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 

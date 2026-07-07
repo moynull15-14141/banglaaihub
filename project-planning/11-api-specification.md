@@ -458,6 +458,11 @@ PUT /api/v1/users/me
 Authorization: Bearer <access_token>
 ```
 
+> Accepts `display_name`, `bio`, `institution`, `location`, `website_url`, `github_url`,
+> `scholar_url`, `kaggle_url`, `huggingface_url`, `linkedin_url`, `orcid_id`, `x_url` — the
+> same portfolio-link fields collected on the Contributor Application form (below), so a
+> contributor can keep them up to date after approval too.
+
 ---
 
 ### Get My Bookmarks
@@ -486,6 +491,116 @@ PATCH  /api/v1/notifications/:id/read
 PATCH  /api/v1/notifications/read-all
 Authorization: Bearer <access_token>
 ```
+
+---
+
+## Contributor Applications API
+
+> The self-serve path from `user` to `contributor` — see doc 13's "Contributor Application
+> System" section for the full workflow. `POST /resources` requires the `contributor` role;
+> this is how a `user` gets it.
+
+### Submit Application
+
+```
+POST /api/v1/contributor-applications
+Authorization: Bearer <access_token>
+```
+
+**Request:**
+```json
+{
+  "full_name": "Rafiq Ahmed",
+  "profession": "Data Scientist",
+  "organization": "BUET",
+  "country": "Bangladesh",
+  "bio": "NLP researcher focused on Bangla sentiment analysis...",
+  "expertise": "Bangla NLP, dataset curation",
+  "experience": "3 years building Bangla NLP datasets at BUET...",
+  "motivation": "I want to help grow the Bangla AI dataset ecosystem...",
+  "sample_works": "https://github.com/rafiq/bangla-sentiment",
+  "github_url": "https://github.com/rafiq",
+  "kaggle_url": "https://kaggle.com/rafiq",
+  "huggingface_url": "https://huggingface.co/rafiq",
+  "scholar_url": "https://scholar.google.com/citations?user=...",
+  "linkedin_url": "https://linkedin.com/in/rafiq",
+  "website_url": "https://rafiq.dev",
+  "orcid_id": "0000-0002-1825-0097",
+  "x_url": "https://x.com/rafiq"
+}
+```
+
+All portfolio-link fields are optional. Rejected with `409 CONFLICT` if the user already has
+an active (`pending`/`needs_revision`) application, or `429 RATE_LIMIT_EXCEEDED` if still
+within the 30-day reapply cooldown after a rejection.
+
+**Response (201):** the created application (see "Get My Application" below for the shape).
+
+---
+
+### Get / Update / Withdraw My Application
+
+```
+GET    /api/v1/contributor-applications/me
+PATCH  /api/v1/contributor-applications/me
+POST   /api/v1/contributor-applications/me/withdraw
+Authorization: Bearer <access_token>
+```
+
+`PATCH` only succeeds while the application is `pending` or `needs_revision`; editing a
+`needs_revision` application moves it back to `pending`. The applicant-facing shape never
+includes `review_notes` (internal-only) — only `status` and `feedback_to_applicant`.
+
+---
+
+### Upload Sample Files
+
+```
+POST /api/v1/contributor-applications/me/samples?kind=sample
+POST /api/v1/contributor-applications/me/samples?kind=supporting
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+```
+
+> `kind=sample` for sample datasets/tools/papers, `kind=supporting` for optional supporting
+> documents. Requires an active application. Same file-type/size validation as dataset
+> uploads, plus PDF, capped at 20MB per file.
+
+---
+
+### Admin: Review Applications
+
+```
+GET    /api/v1/admin/contributor-applications              -- queue, filter by status
+                                                               ?search=&country=&profession=&
+                                                               organization=&expertise= (all optional,
+                                                               case-insensitive contains match)
+GET    /api/v1/admin/contributor-applications/:id           -- full detail (includes previous_applications)
+PATCH  /api/v1/admin/contributor-applications/:id/approve
+PATCH  /api/v1/admin/contributor-applications/:id/reject
+PATCH  /api/v1/admin/contributor-applications/:id/request-revision
+Authorization: Bearer <access_token>   (requires contributor_application:review — editor+)
+```
+
+**Request (approve/reject/request-revision):**
+```json
+{
+  "feedback": "Shown to the applicant, in their notification and email.",
+  "notes": "Internal only — never shown to the applicant."
+}
+```
+
+Both fields are optional. `GET /:id` returns the full admin detail: applicant profile,
+portfolio-link badges (`connected`/`url`, never fetched externally), `contribution_stats`
+(submitted/approved/rejected/pending counts, approval rate), `quality_indicators` (each
+an `{ value, available }` pair — `available: false` for metrics with no automated scoring
+yet, per doc 10's note on this), and `previous_applications` — every earlier application by
+the same user (most recent first), with `reviewer`/`review_notes` included. The applicant-
+facing `GET /me` response includes the same `previous_applications` history, but without
+`reviewer`/`review_notes` (internal-only, same discipline as the current application).
+
+Approving grants the `contributor` role additively (existing roles are kept). Every decision
+writes an `audit_logs` row, creates a notification, and sends an email.
 
 ---
 
@@ -557,6 +672,9 @@ POST   /api/v1/admin/users/:id/ban
 GET    /api/v1/admin/reports
 POST   /api/v1/admin/reports/:id/resolve
 GET    /api/v1/admin/audit-logs
+GET    /api/v1/admin/contributor-applications
+PATCH  /api/v1/admin/contributor-applications/:id/approve
+PATCH  /api/v1/admin/contributor-applications/:id/reject
 ```
 
 ---
@@ -568,6 +686,7 @@ GET    /api/v1/admin/audit-logs
 | `POST /auth/login` | 5 req/15 min per IP |
 | `POST /auth/register` | 3 req/hour per IP |
 | `POST /resources` | 10 req/hour per user |
+| `POST /contributor-applications` | 3 req/day per user |
 | `GET /search` | 60 req/min per IP |
 | All other GET | 300 req/min per IP |
 

@@ -64,6 +64,8 @@ export class AdminService {
 
   static async getDashboard(): Promise<Record<string, unknown>> {
     const newUserSince = new Date(Date.now() - NEW_USER_WINDOW_MS);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
     const [
       totalUsers,
@@ -78,6 +80,10 @@ export class AdminService {
       reportsByStatus,
       notificationCount,
       reputationEventCount,
+      pendingContributorApplications,
+      needsRevisionContributorApplications,
+      contributorApplicationsApprovedToday,
+      contributorApplicationsRejectedToday,
     ] = await Promise.all([
       prisma.user.count({ where: { deletedAt: null } }),
       prisma.user.count({ where: { deletedAt: null, status: 'active' } }),
@@ -99,6 +105,14 @@ export class AdminService {
       prisma.report.groupBy({ by: ['status'], _count: { _all: true } }),
       prisma.notification.count(),
       prisma.reputationEvent.count(),
+      prisma.contributorApplication.count({ where: { status: 'pending' } }),
+      prisma.contributorApplication.count({ where: { status: 'needs_revision' } }),
+      prisma.contributorApplication.count({
+        where: { status: 'approved', reviewedAt: { gte: todayStart } },
+      }),
+      prisma.contributorApplication.count({
+        where: { status: 'rejected', reviewedAt: { gte: todayStart } },
+      }),
     ]);
 
     const statusCounts = Object.fromEntries(
@@ -123,6 +137,10 @@ export class AdminService {
       pending_approvals: statusCounts.pending ?? 0,
       notifications: notificationCount,
       reputation_events: reputationEventCount,
+      pending_contributor_applications: pendingContributorApplications,
+      needs_revision_contributor_applications: needsRevisionContributorApplications,
+      contributor_applications_approved_today: contributorApplicationsApprovedToday,
+      contributor_applications_rejected_today: contributorApplicationsRejectedToday,
     };
   }
 }

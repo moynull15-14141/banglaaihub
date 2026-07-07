@@ -7,7 +7,7 @@ import { useAdminPendingResources } from '@/lib/hooks/useAdmin';
 import { ROUTES } from '@/lib/constants/routes';
 
 export function PendingApprovalsCard() {
-  const { data, isLoading, isError, refetch } = useAdminPendingResources(5);
+  const { data, isLoading, isError, refetch } = useAdminPendingResources({ limit: 5 });
   const resources = data?.data ?? [];
 
   return (

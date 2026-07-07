@@ -37,6 +37,8 @@ Users ──────────── Resources (Universal Base)
   │
   ├── Reputation_Events
   │
+  ├── Contributor_Applications ──── (grants) ──── Roles
+  │
   └── Audit_Logs
 ```
 
@@ -56,9 +58,17 @@ users
 ├── bio              TEXT
 ├── institution      VARCHAR(200)        -- University / Company
 ├── location         VARCHAR(100)
-├── website_url      TEXT
+├── website_url      TEXT                -- also doubles as "personal website / portfolio"
 ├── github_url       TEXT
 ├── scholar_url      TEXT                -- Google Scholar
+├── kaggle_url       TEXT
+├── huggingface_url  TEXT
+├── linkedin_url     TEXT
+├── orcid_id         VARCHAR(19)         -- e.g. 0000-0002-1825-0097
+├── x_url            TEXT                -- X (Twitter)
+├── external_stats    JSONB              -- reserved for future GitHub/Kaggle/HF/Scholar
+│                                          stats + AI trust score; unused today, nullable
+│                                          so it needs no migration when that work starts
 ├── reputation_score INTEGER DEFAULT 0
 ├── is_verified      BOOLEAN DEFAULT FALSE
 ├── email_verified   BOOLEAN DEFAULT FALSE
@@ -118,6 +128,10 @@ user_roles
 ├── assigned_at      TIMESTAMPTZ DEFAULT NOW()
 └── PRIMARY KEY (user_id, role_id)
 ```
+
+> `user` → `contributor` is granted through this table too, but the row is normally created
+> by the Contributor Application approval flow, not typed in directly by an admin. See
+> table 21, `contributor_applications`, below.
 
 ---
 
@@ -395,6 +409,59 @@ resource_analytics
 
 ---
 
+### 21. `contributor_applications`
+
+Added for the Contributor Application System — the self-serve `user` → `contributor` path
+that replaced ad-hoc admin promotion (see doc 13's Contributor Application System section).
+
+```sql
+contributor_applications
+├── id                        UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id                   UUID REFERENCES users(id) ON DELETE CASCADE
+├── status                    VARCHAR(20) DEFAULT 'pending'
+│                              -- pending | approved | rejected | needs_revision | withdrawn
+├── full_name                 TEXT NOT NULL
+├── profession                 TEXT NOT NULL
+├── organization                TEXT NOT NULL
+├── country                     TEXT NOT NULL
+├── bio                       TEXT NOT NULL
+├── expertise                 TEXT NOT NULL              -- area of expertise, free text
+├── experience                TEXT NOT NULL
+├── motivation                TEXT NOT NULL              -- "why do you want to contribute"
+├── sample_works               TEXT                       -- description / links, optional
+├── sample_file_urls           TEXT[]                     -- R2 object keys
+├── supporting_document_urls   TEXT[]                     -- R2 object keys, optional
+├── profile_snapshot           JSONB NOT NULL             -- immutable copy of the applicant's
+│                                                            profile links (github/kaggle/hf/
+│                                                            scholar/linkedin/website/orcid/x)
+│                                                            as of submission — what the
+│                                                            reviewer actually saw
+├── reviewer_id                UUID REFERENCES users(id)
+├── review_notes                TEXT                      -- internal only, never applicant-visible
+├── feedback_to_applicant        TEXT                     -- shown to the applicant
+├── reviewed_at                    TIMESTAMPTZ
+├── submitted_at                    TIMESTAMPTZ DEFAULT NOW()
+├── created_at                      TIMESTAMPTZ DEFAULT NOW()
+└── updated_at                      TIMESTAMPTZ DEFAULT NOW()
+```
+
+The canonical, editable profile-link values live on `users` (see table 1); `profile_snapshot`
+is a point-in-time copy taken at submission so a later profile edit can't retroactively
+change what a reviewer's decision was based on.
+
+The admin review page and the applicant's own status page both also surface every other
+`contributor_applications` row for the same `user_id` (most recent first) as an application
+history/timeline — no separate history table, just a query excluding the current row.
+
+Contribution stats and quality indicators shown in the admin review panel (total submitted/
+approved/rejected, approval rate, profile completeness, resource diversity) are computed
+on read from the existing `resources`/`reputation_events`/`users` tables — no dedicated
+metrics table exists. Metrics with no automated backing yet (contribution quality score,
+documentation/metadata quality, license compliance) are returned as explicit placeholders,
+not stored or faked.
+
+---
+
 ## Indexes
 
 ```sql
@@ -423,6 +490,10 @@ CREATE INDEX idx_notifications_user ON notifications(user_id, is_read);
 -- Audit logs by actor and target
 CREATE INDEX idx_audit_actor ON audit_logs(actor_id);
 CREATE INDEX idx_audit_target ON audit_logs(target_type, target_id);
+
+-- Contributor applications: applicant's own applications + admin review queue
+CREATE INDEX idx_contributor_applications_user ON contributor_applications(user_id);
+CREATE INDEX idx_contributor_applications_status ON contributor_applications(status);
 ```
 
 ---
@@ -480,6 +551,12 @@ migrations/
 ├── 013_create_analytics.sql
 └── 014_create_indexes.sql
 ```
+
+> In practice, the backend uses Prisma-generated, timestamp-named migrations under
+> `backend/prisma/migrations/` rather than this hand-numbered scheme (e.g. `20260706120000_init`).
+> The Contributor Application System (table 21, plus the new `users` columns) shipped as
+> `20260707000000_add_contributor_applications`; the `profession`/`organization`/`country`
+> columns followed as `20260707010000_add_contributor_application_profile_details`.
 
 ---
 

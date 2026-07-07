@@ -16,6 +16,14 @@ import type {
 
 const PUBLIC_PROFILE_RESOURCE_LIMIT = 10;
 
+// Privilege-escalation guard for updateUserRoles: only a super_admin can
+// grant admin/super_admin, or touch the roles of someone who already holds
+// either — otherwise an admin could promote themselves (or anyone else) to
+// super_admin, or silently demote an existing admin/super_admin.
+const TOP_TIER_ROLES = ['admin', 'super_admin'];
+const includesTopTierRole = (roleNames: string[]): boolean =>
+  roleNames.some((name) => TOP_TIER_ROLES.includes(name));
+
 // Maps the four author-facing filter words back onto doc 10's actual
 // ResourceStatus enum (pending | approved | rejected | flagged) — "draft" has
 // no distinct DB status of its own, so it's treated as a synonym for
@@ -47,6 +55,11 @@ function toAdminUserDto(
     websiteUrl: string | null;
     githubUrl: string | null;
     scholarUrl: string | null;
+    kaggleUrl: string | null;
+    huggingfaceUrl: string | null;
+    linkedinUrl: string | null;
+    orcidId: string | null;
+    xUrl: string | null;
     reputationScore: number;
     isVerified: boolean;
     emailVerified: boolean;
@@ -71,6 +84,11 @@ function toAdminUserDto(
     website_url: user.websiteUrl,
     github_url: user.githubUrl,
     scholar_url: user.scholarUrl,
+    kaggle_url: user.kaggleUrl,
+    huggingface_url: user.huggingfaceUrl,
+    linkedin_url: user.linkedinUrl,
+    orcid_id: user.orcidId,
+    x_url: user.xUrl,
     reputation_score: user.reputationScore,
     is_verified: user.isVerified,
     email_verified: user.emailVerified,
@@ -143,6 +161,11 @@ export class UserService {
       website_url: user.websiteUrl,
       github_url: user.githubUrl,
       scholar_url: user.scholarUrl,
+      kaggle_url: user.kaggleUrl,
+      huggingface_url: user.huggingfaceUrl,
+      linkedin_url: user.linkedinUrl,
+      orcid_id: user.orcidId,
+      x_url: user.xUrl,
       reputation_score: user.reputationScore,
       is_verified: user.isVerified,
       email_verified: user.emailVerified,
@@ -171,6 +194,11 @@ export class UserService {
         websiteUrl: input.website_url,
         githubUrl: input.github_url,
         scholarUrl: input.scholar_url,
+        kaggleUrl: input.kaggle_url,
+        huggingfaceUrl: input.huggingface_url,
+        linkedinUrl: input.linkedin_url,
+        orcidId: input.orcid_id,
+        xUrl: input.x_url,
       },
     });
 
@@ -309,16 +337,21 @@ export class UserService {
   }
 
   static async getDashboard(userId: string): Promise<Record<string, unknown>> {
-    const [statusCounts, bookmarkCount, unreadNotifications, user] = await Promise.all([
-      prisma.resource.groupBy({
-        by: ['status'],
-        where: { authorId: userId, deletedAt: null },
-        _count: { _all: true },
-      }),
-      prisma.bookmark.count({ where: { userId } }),
-      prisma.notification.count({ where: { userId, isRead: false } }),
-      prisma.user.findUnique({ where: { id: userId }, select: { reputationScore: true } }),
-    ]);
+    const [statusCounts, resourceTotals, bookmarkCount, unreadNotifications, user] =
+      await Promise.all([
+        prisma.resource.groupBy({
+          by: ['status'],
+          where: { authorId: userId, deletedAt: null },
+          _count: { _all: true },
+        }),
+        prisma.resource.aggregate({
+          where: { authorId: userId, deletedAt: null },
+          _sum: { viewCount: true, downloadCount: true },
+        }),
+        prisma.bookmark.count({ where: { userId } }),
+        prisma.notification.count({ where: { userId, isRead: false } }),
+        prisma.user.findUnique({ where: { id: userId }, select: { reputationScore: true } }),
+      ]);
 
     if (!user) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
@@ -337,6 +370,8 @@ export class UserService {
       bookmark_count: bookmarkCount,
       unread_notifications: unreadNotifications,
       reputation_score: user.reputationScore,
+      total_views: resourceTotals._sum.viewCount ?? 0,
+      total_downloads: resourceTotals._sum.downloadCount ?? 0,
     };
   }
 
@@ -421,6 +456,11 @@ export class UserService {
         websiteUrl: input.website_url,
         githubUrl: input.github_url,
         scholarUrl: input.scholar_url,
+        kaggleUrl: input.kaggle_url,
+        huggingfaceUrl: input.huggingface_url,
+        linkedinUrl: input.linkedin_url,
+        orcidId: input.orcid_id,
+        xUrl: input.x_url,
       },
     });
 
@@ -487,6 +527,16 @@ export class UserService {
     }
 
     const before = await getUserRoleNames(id);
+
+    const actorRoles = await getUserRoleNames(actorId);
+    const actorIsSuperAdmin = actorRoles.includes('super_admin');
+    if (!actorIsSuperAdmin && (includesTopTierRole(input.role_names) || includesTopTierRole(before))) {
+      throw new ApiError(
+        403,
+        'FORBIDDEN',
+        'Only a super_admin can grant the admin/super_admin role, or change the roles of a user who already has one.',
+      );
+    }
 
     await prisma.$transaction([
       prisma.userRole.deleteMany({ where: { userId: id } }),

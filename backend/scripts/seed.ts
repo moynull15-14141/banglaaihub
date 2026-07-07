@@ -17,12 +17,15 @@ const ROLES = [
 const PERMISSIONS: Record<string, string> = {
   'resource:view': 'View resources',
   'profile:view': 'View user profiles',
-  'resource:create': 'Submit a resource',
   'resource:edit_own': 'Edit own resource',
   'resource:delete_own': 'Delete own resource',
   'resource:bookmark': 'Bookmark resources',
   'comment:create': 'Post comments',
   'resource:report': 'Report resources',
+  'contributor_application:submit': 'Apply to become a contributor',
+  'contributor_application:view_own': 'View own contributor application',
+  'contributor_application:withdraw': 'Withdraw own contributor application',
+  'resource:create': 'Submit a resource',
   'resource:upload': 'Upload dataset files',
   'resource:edit_any': 'Edit any resource',
   'comment:delete_any': 'Delete any comment',
@@ -30,6 +33,7 @@ const PERMISSIONS: Record<string, string> = {
   'resource:feature': 'Feature or unfeature a resource',
   'report:resolve': 'Resolve user reports',
   'report:reject': 'Reject user reports',
+  'contributor_application:review': 'Review contributor applications',
   'user:manage': 'Manage user accounts',
   'user:ban': 'Ban user accounts',
   'user:role_change': 'Change a user’s role',
@@ -44,17 +48,29 @@ const ROLE_PERMISSIONS: Record<(typeof ROLES)[number], string[]> = {
   user: [
     'resource:view',
     'profile:view',
-    'resource:create',
     'resource:edit_own',
     'resource:delete_own',
     'resource:bookmark',
     'comment:create',
     'resource:report',
+    'contributor_application:submit',
+    'contributor_application:view_own',
+    'contributor_application:withdraw',
   ],
-  contributor: ['resource:upload'],
+  // `resource:create` lives here, not on `user` — becoming a contributor
+  // (via an approved contributor application, see ContributorApplicationService)
+  // is what unlocks publishing. `user` can browse/bookmark/comment/report and
+  // apply, but not submit resources.
+  contributor: ['resource:create', 'resource:upload'],
   verified_contributor: [],
   moderator: ['resource:edit_any', 'comment:delete_any'],
-  editor: ['resource:approve', 'resource:feature', 'report:resolve', 'report:reject'],
+  editor: [
+    'resource:approve',
+    'resource:feature',
+    'report:resolve',
+    'report:reject',
+    'contributor_application:review',
+  ],
   admin: ['user:manage', 'user:ban', 'user:role_change', 'system:audit_log_view'],
   super_admin: ['admin:manage', 'system:configure'],
 };
@@ -102,6 +118,11 @@ async function seedRoles(): Promise<Map<string, number>> {
   return nameToId;
 }
 
+// Fully declarative: brings role_permissions in line with ROLE_PERMISSIONS
+// exactly — adds missing grants AND removes stale ones (e.g. `user` losing
+// `resource:create` when that permission moved to `contributor`). A purely
+// additive seed (createMany + skipDuplicates only) would leave old grants
+// behind forever once a permission is removed from a role's list here.
 async function seedRolePermissions(
   roleIds: Map<string, number>,
   permissionIds: Map<string, number>,
@@ -111,13 +132,19 @@ async function seedRolePermissions(
     if (roleId === undefined) continue;
 
     const permissionNames = resolveCumulativePermissions(role);
-    const data = permissionNames
+    const desiredPermissionIds = permissionNames
       .map((name) => permissionIds.get(name))
-      .filter((permissionId): permissionId is number => permissionId !== undefined)
-      .map((permissionId) => ({ roleId, permissionId }));
+      .filter((permissionId): permissionId is number => permissionId !== undefined);
 
-    if (data.length > 0) {
-      await prisma.rolePermission.createMany({ data, skipDuplicates: true });
+    await prisma.rolePermission.deleteMany({
+      where: { roleId, permissionId: { notIn: desiredPermissionIds } },
+    });
+
+    if (desiredPermissionIds.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: desiredPermissionIds.map((permissionId) => ({ roleId, permissionId })),
+        skipDuplicates: true,
+      });
     }
   }
 }

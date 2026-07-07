@@ -2,7 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
 import { DASHBOARD_NAV_LINKS } from '@/components/layout/dashboardNavLinks';
+import { canAccessAdminPanel } from '@/components/admin/adminNavLinks';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { useContributorNavStatus } from '@/lib/hooks/useContributorNavStatus';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils';
 
@@ -17,10 +21,26 @@ function isActive(pathname: string, href: string): boolean {
 
 export function DashboardSidebarNav({ onNavigate }: DashboardSidebarNavProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const contributorNavStatus = useContributorNavStatus();
+
+  // Only visible to whoever can see at least one admin page (per
+  // adminNavLinks.ts), so this link never appears for someone who'd just hit
+  // "Access restricted" on click.
+  let links: { href: string; label: string; icon: LucideIcon }[] = DASHBOARD_NAV_LINKS;
+  if (contributorNavStatus) {
+    links = [
+      ...links,
+      { href: contributorNavStatus.href, label: contributorNavStatus.label, icon: Sparkles },
+    ];
+  }
+  if (canAccessAdminPanel(user?.roles ?? [])) {
+    links = [...links, { href: ROUTES.admin, label: 'Admin Panel', icon: ShieldCheck }];
+  }
 
   return (
     <nav className="flex flex-col gap-1 p-3" aria-label="Dashboard navigation">
-      {DASHBOARD_NAV_LINKS.map(({ href, label, icon: Icon }) => {
+      {links.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
         return (
           <Link

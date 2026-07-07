@@ -60,6 +60,13 @@ export class StorageService {
     return StorageService.uploadObject(`avatars/${userId}`, file);
   }
 
+  static uploadContributorSample(
+    userId: string,
+    file: UploadedFile,
+  ): Promise<{ key: string; checksum: string }> {
+    return StorageService.uploadObject(`contributor-applications/${userId}`, file);
+  }
+
   static async getSignedDownloadUrl(
     key: string,
     expirySeconds = DOWNLOAD_URL_EXPIRY_SECONDS,

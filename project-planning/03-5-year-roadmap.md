@@ -50,7 +50,8 @@ Build a stable, high-quality version 1 of the platform that real users can depen
 **MVP Phase 2 — Community (Q3 2026 প্রথমার্ধ):**
 - [ ] Forum / Discussion system
 - [ ] Comments on resources
-- [ ] Contributor verification flow
+- [x] Contributor verification flow — pulled forward into Phase 1 as the Contributor
+      Application System (see doc 13); shipped ahead of the rest of Phase 2
 
 **MVP Phase 3 — Research Papers (Q3 2026 দ্বিতীয়ার্ধ):**
 - [ ] Research paper index (manual curation)

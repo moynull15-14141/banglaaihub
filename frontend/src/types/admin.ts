@@ -14,6 +14,10 @@ export interface AdminDashboardStats {
   pending_approvals: number;
   notifications: number;
   reputation_events: number;
+  pending_contributor_applications: number;
+  needs_revision_contributor_applications: number;
+  contributor_applications_approved_today: number;
+  contributor_applications_rejected_today: number;
 }
 
 export interface AdminUser extends User {

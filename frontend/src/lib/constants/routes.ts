@@ -29,11 +29,14 @@ export const ROUTES = {
   settings: '/settings',
   settingsProfile: '/settings/profile',
   mySubmissions: '/my-submissions',
+  contributorApplication: '/contributor-application',
 
   admin: '/admin',
   adminPending: '/admin/pending',
   adminUsers: '/admin/users',
   adminReports: '/admin/reports',
+  adminContributorApplications: '/admin/contributor-applications',
+  adminContributorApplication: (id: string) => `/admin/contributor-applications/${id}`,
 
   terms: '/terms',
   privacy: '/privacy',
