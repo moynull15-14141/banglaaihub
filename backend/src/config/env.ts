@@ -19,6 +19,10 @@ const envSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
+  // Optional: only set if the bucket is later given public access (e.g. a
+  // r2.dev subdomain or custom domain). Unset today — every URL StorageService
+  // hands out is a time-limited signed URL against the private bucket.
+  R2_PUBLIC_URL: z.string().url().optional(),
 
   MEILISEARCH_HOST: z.string().url(),
   MEILISEARCH_ADMIN_KEY: z.string().optional(),

@@ -6,30 +6,42 @@ import { ResourceMeta } from '@/components/resource/ResourceMeta';
 import { TagBadge } from '@/components/resource/TagBadge';
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
+import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
 import { truncate } from '@/lib/utils/format';
 import type { Resource } from '@/types/resource';
 import type { SearchResult } from '@/types/search';
 
-const TYPE_LABELS: Record<string, string> = {
-  dataset: 'Dataset',
-  paper: 'Paper',
-  tool: 'Tool',
-  tutorial: 'Tutorial',
-  prompt: 'Prompt',
-  project: 'Project',
-  news: 'News',
+const STATUS_BADGE_VARIANT: Record<string, 'warning' | 'success' | 'destructive' | 'secondary'> = {
+  pending: 'warning',
+  approved: 'success',
+  rejected: 'destructive',
+  flagged: 'destructive',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: 'Pending review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  flagged: 'Flagged',
 };
 
 interface ResourceCardProps {
   resource: Resource | SearchResult;
+  // Only meaningful for a contributor's own submissions (My Submissions) —
+  // public listings only ever contain approved resources, so this stays off
+  // by default rather than showing a redundant "Approved" badge everywhere.
+  showStatus?: boolean;
 }
 
-export function ResourceCard({ resource }: ResourceCardProps) {
+export function ResourceCard({ resource, showStatus = false }: ResourceCardProps) {
   const author = resource.author;
   const authorName = author?.display_name ?? author?.username ?? null;
   // SearchResult's author DTO has no avatar_url — only Resource's does.
   const authorAvatarUrl = author && 'avatar_url' in author ? author.avatar_url : null;
   const href = resourceHref(resource.type, resource.slug);
+  // SearchResult has no `status` field (the search index only ever contains
+  // approved resources) — only Resource carries it.
+  const status = 'status' in resource ? resource.status : null;
 
   return (
     <Card className="flex h-full flex-col overflow-hidden py-0">
@@ -50,7 +62,12 @@ export function ResourceCard({ resource }: ResourceCardProps) {
       </Link>
       <CardHeader className="pt-4">
         <div className="flex items-center gap-2">
-          <Badge variant="brand">{TYPE_LABELS[resource.type] ?? resource.type}</Badge>
+          <Badge variant="brand">{RESOURCE_TYPE_LABELS[resource.type] ?? resource.type}</Badge>
+          {showStatus && status ? (
+            <Badge variant={STATUS_BADGE_VARIANT[status] ?? 'secondary'}>
+              {STATUS_LABEL[status] ?? status}
+            </Badge>
+          ) : null}
           {resource.category ? (
             <Link
               href={ROUTES.category(resource.category.slug)}

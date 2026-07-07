@@ -2,13 +2,14 @@
 
 import { isAxiosError } from 'axios';
 import { notFound } from 'next/navigation';
-import { Bookmark, ExternalLink } from 'lucide-react';
+import { Bookmark, ExternalLink, FileText } from 'lucide-react';
 import { Breadcrumb } from '@/components/common/Breadcrumb';
 import { DetailSkeleton } from '@/components/common/LoadingSkeleton';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageContainer } from '@/components/common/PageContainer';
 import { ResourceMeta } from '@/components/resource/ResourceMeta';
 import { ResourceTypeMetadata } from '@/components/resource/ResourceTypeMetadata';
+import { ShareButtons } from '@/components/resource/ShareButtons';
 import { TagBadge } from '@/components/resource/TagBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,17 +17,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { UserCard } from '@/components/user/UserCard';
 import { ResourceJsonLd } from '@/components/seo/JsonLd';
 import { useResource } from '@/lib/hooks/useResources';
-import { ROUTES } from '@/lib/constants/routes';
-
-const TYPE_LABELS: Record<string, string> = {
-  dataset: 'Dataset',
-  paper: 'Paper',
-  tool: 'Tool',
-  tutorial: 'Tutorial',
-  prompt: 'Prompt',
-  project: 'Project',
-  news: 'News',
-};
+import { ROUTES, resourceHref } from '@/lib/constants/routes';
+import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
+import { formatDate } from '@/lib/utils/format';
 
 interface ResourceDetailViewProps {
   slug: string;
@@ -67,14 +60,14 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
       <ResourceJsonLd resource={resource} />
       <Breadcrumb
         items={[
-          { label: `${TYPE_LABELS[resource.type] ?? resource.type}s`, href: ROUTES.resources },
+          { label: `${RESOURCE_TYPE_LABELS[resource.type] ?? resource.type}s`, href: ROUTES.resources },
           { label: resource.title },
         ]}
       />
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="brand">{TYPE_LABELS[resource.type] ?? resource.type}</Badge>
+          <Badge variant="brand">{RESOURCE_TYPE_LABELS[resource.type] ?? resource.type}</Badge>
           {resource.category ? (
             <Badge variant="secondary">{resource.category.name}</Badge>
           ) : null}
@@ -87,28 +80,44 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
           bookmarkCount={resource.bookmark_count}
           publishedAt={resource.published_at}
         />
+        <p className="text-xs text-muted-foreground">Last updated {formatDate(resource.updated_at)}</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex" tabIndex={0}>
-              <Button variant="outline" disabled>
-                <Bookmark className="size-4" aria-hidden="true" />
-                Bookmark
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Bookmarking is coming soon</TooltipContent>
-        </Tooltip>
-        {resource.external_url ? (
-          <Button asChild variant="outline">
-            <a href={resource.external_url} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4" aria-hidden="true" />
-              External link
-            </a>
-          </Button>
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex" tabIndex={0}>
+                <Button variant="outline" disabled>
+                  <Bookmark className="size-4" aria-hidden="true" />
+                  Bookmark
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Bookmarking is coming soon</TooltipContent>
+          </Tooltip>
+          {resource.external_url ? (
+            <Button asChild variant="outline">
+              <a href={resource.external_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                External link
+              </a>
+            </Button>
+          ) : null}
+          {resource.documentation_url ? (
+            <Button asChild variant="outline">
+              <a href={resource.documentation_url} target="_blank" rel="noopener noreferrer">
+                <FileText className="size-4" aria-hidden="true" />
+                Documentation
+              </a>
+            </Button>
+          ) : null}
+        </div>
+        <ShareButtons
+          slug={resource.slug}
+          url={`${process.env.NEXT_PUBLIC_APP_URL ?? ''}${resourceHref(resource.type, resource.slug)}`}
+          title={resource.title}
+        />
       </div>
 
       {resource.description ? (

@@ -312,6 +312,7 @@ model Resource {
   visibility    Visibility     @default(public)
   language      String         @default("bn") @db.VarChar(10)
   thumbnailUrl  String?        @map("thumbnail_url")
+  documentationUrl String?     @map("documentation_url")
   externalUrl   String?        @map("external_url")
   license       String?        @db.VarChar(100)
   viewCount     Int            @default(0) @map("view_count")
@@ -399,6 +400,9 @@ model Tool {
   platform       String?   @db.VarChar(100)
   demoUrl        String?   @map("demo_url")
   installCommand String?   @map("install_command")
+  fileUrl        String?   @map("file_url")
+  fileSizeBytes  BigInt?   @map("file_size_bytes")
+  checksumSha256 String?   @map("checksum_sha256") @db.VarChar(64)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 

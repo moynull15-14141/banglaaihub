@@ -134,7 +134,7 @@ export class UserService {
       institution: user.institution,
       reputation_score: user.reputationScore,
       is_verified: user.isVerified,
-      resources: user.authoredResources.map(toResourceDto),
+      resources: await Promise.all(user.authoredResources.map(toResourceDto)),
       stats: {
         total_resources: stats._count._all,
         total_downloads: stats._sum.downloadCount ?? 0,
@@ -219,9 +219,15 @@ export class UserService {
   }
 
   static async uploadAvatar(userId: string, file: UploadedFile): Promise<{ avatar_url: string }> {
+    const existing = await prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
     const { key } = await StorageService.uploadAvatar(userId, file);
 
     await prisma.user.update({ where: { id: userId }, data: { avatarUrl: key } });
+
+    // Best-effort: the DB already points at the new avatar, so a failure to
+    // delete the old object only leaves it orphaned in R2, never breaks the
+    // response.
+    await StorageService.deleteObject(existing?.avatarUrl).catch(() => {});
 
     await writeAuditLog({
       actorId: userId,
@@ -253,7 +259,7 @@ export class UserService {
     ]);
 
     return {
-      data: bookmarks.map((bookmark) => toResourceDto(bookmark.resource)),
+      data: await Promise.all(bookmarks.map((bookmark) => toResourceDto(bookmark.resource))),
       meta: buildPaginationMeta(total, pagination),
     };
   }
@@ -284,6 +290,10 @@ export class UserService {
       action: 'bookmark.add',
       targetType: 'resource',
       targetId: resourceId,
+    });
+
+    await prisma.resourceAnalytics.create({
+      data: { resourceId, eventType: 'bookmark', userId },
     });
   }
 
@@ -333,25 +343,49 @@ export class UserService {
       }),
     ]);
 
-    return { data: resources.map(toResourceDto), meta: buildPaginationMeta(total, pagination) };
+    return { data: await Promise.all(resources.map(toResourceDto)), meta: buildPaginationMeta(total, pagination) };
   }
 
   static async getDashboard(userId: string): Promise<Record<string, unknown>> {
-    const [statusCounts, resourceTotals, bookmarkCount, unreadNotifications, user] =
-      await Promise.all([
-        prisma.resource.groupBy({
-          by: ['status'],
-          where: { authorId: userId, deletedAt: null },
-          _count: { _all: true },
-        }),
-        prisma.resource.aggregate({
-          where: { authorId: userId, deletedAt: null },
-          _sum: { viewCount: true, downloadCount: true },
-        }),
-        prisma.bookmark.count({ where: { userId } }),
-        prisma.notification.count({ where: { userId, isRead: false } }),
-        prisma.user.findUnique({ where: { id: userId }, select: { reputationScore: true } }),
-      ]);
+    const [
+      statusCounts,
+      resourceTotals,
+      bookmarkCount,
+      unreadNotifications,
+      user,
+      shareCount,
+      mostDownloaded,
+      recentDownloads,
+    ] = await Promise.all([
+      prisma.resource.groupBy({
+        by: ['status'],
+        where: { authorId: userId, deletedAt: null },
+        _count: { _all: true },
+      }),
+      prisma.resource.aggregate({
+        where: { authorId: userId, deletedAt: null },
+        _sum: { viewCount: true, downloadCount: true, bookmarkCount: true },
+      }),
+      prisma.bookmark.count({ where: { userId } }),
+      prisma.notification.count({ where: { userId, isRead: false } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { reputationScore: true } }),
+      // No dedicated share_count column (see ResourceService.logShare) —
+      // counted from the analytics events themselves.
+      prisma.resourceAnalytics.count({
+        where: { eventType: 'share', resource: { authorId: userId, deletedAt: null } },
+      }),
+      prisma.resource.findFirst({
+        where: { authorId: userId, deletedAt: null, downloadCount: { gt: 0 } },
+        orderBy: { downloadCount: 'desc' },
+        select: { id: true, slug: true, title: true, type: true, downloadCount: true },
+      }),
+      prisma.resourceAnalytics.findMany({
+        where: { eventType: 'download', resource: { authorId: userId, deletedAt: null } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: { resource: { select: { id: true, slug: true, title: true, type: true } } },
+      }),
+    ]);
 
     if (!user) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
@@ -367,11 +401,35 @@ export class UserService {
       published_resources: countByStatus.approved ?? 0,
       pending_resources: countByStatus.pending ?? 0,
       rejected_resources: countByStatus.rejected ?? 0,
+      // Bookmarks this user has personally made on any resource — kept as-is
+      // for backward compatibility with existing dashboard callers.
       bookmark_count: bookmarkCount,
       unread_notifications: unreadNotifications,
       reputation_score: user.reputationScore,
       total_views: resourceTotals._sum.viewCount ?? 0,
       total_downloads: resourceTotals._sum.downloadCount ?? 0,
+      // Bookmarks/shares this user's own resources have *received* — the
+      // creator-facing counterpart to bookmark_count above.
+      total_bookmarks_received: resourceTotals._sum.bookmarkCount ?? 0,
+      total_shares: shareCount,
+      most_downloaded_resource: mostDownloaded
+        ? {
+            id: mostDownloaded.id,
+            slug: mostDownloaded.slug,
+            title: mostDownloaded.title,
+            type: mostDownloaded.type,
+            download_count: mostDownloaded.downloadCount,
+          }
+        : null,
+      recent_downloads: recentDownloads.map((event) => ({
+        resource: {
+          id: event.resource.id,
+          slug: event.resource.slug,
+          title: event.resource.title,
+          type: event.resource.type,
+        },
+        downloaded_at: event.createdAt,
+      })),
     };
   }
 

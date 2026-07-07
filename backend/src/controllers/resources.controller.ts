@@ -11,6 +11,7 @@ import type {
   ListResourcesQuery,
   UpdateCategoryInput,
   UpdateResourceInput,
+  UploadResourceFileQuery,
 } from '../validators/resource.validator';
 
 function requireUser(req: Request): AccessTokenPayload {
@@ -74,8 +75,19 @@ export async function uploadFile(req: Request, res: Response): Promise<void> {
     throw new ApiError(400, 'VALIDATION_ERROR', 'No file provided.');
   }
 
-  const result = await ResourceService.uploadFile(requireParam(req, 'slug'), user, req.file);
+  const query = (req.validatedQuery ?? {}) as UploadResourceFileQuery;
+  const result = await ResourceService.uploadFile(requireParam(req, 'slug'), user, req.file, query.kind);
   sendSuccess(res, result);
+}
+
+export async function download(req: Request, res: Response): Promise<void> {
+  const { url } = await ResourceService.getDownloadUrl(requireParam(req, 'slug'), req.user);
+  res.redirect(302, url);
+}
+
+export async function share(req: Request, res: Response): Promise<void> {
+  await ResourceService.logShare(requireParam(req, 'slug'), req.user);
+  sendSuccess(res, { message: 'Share recorded.' });
 }
 
 export async function addBookmark(req: Request, res: Response): Promise<void> {

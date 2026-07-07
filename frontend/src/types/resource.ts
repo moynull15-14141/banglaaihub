@@ -63,6 +63,9 @@ export interface ToolMetadata {
   platform: string | null;
   demo_url: string | null;
   install_command: string | null;
+  file_url: string | null;
+  file_size_bytes: string | null;
+  checksum_sha256: string | null;
 }
 
 export interface Resource {
@@ -77,6 +80,7 @@ export interface Resource {
   license: string | null;
   external_url: string | null;
   thumbnail_url: string | null;
+  documentation_url: string | null;
   author: ResourceAuthor | null;
   category: ResourceCategory | null;
   tags: string[];
@@ -92,6 +96,67 @@ export interface Resource {
   dataset: DatasetMetadata | null;
   paper: PaperMetadata | null;
   tool: ToolMetadata | null;
+}
+
+// Mirrors backend/src/validators/dataset.validator.ts's datasetInputSchema —
+// excludes file_url/checksum/benchmark_score, which are system-set by the
+// upload flow, not user-submitted at creation.
+export interface DatasetInput {
+  version?: string;
+  file_format?: string;
+  record_count?: number;
+  annotation_type?: string;
+  domain?: string;
+  collection_year?: number;
+  data_source?: string;
+  methodology?: string;
+  parent_dataset_slug?: string;
+}
+
+// Mirrors backend/src/validators/paper.validator.ts's paperInputSchema.
+export interface PaperInput {
+  abstract?: string;
+  authors?: string[];
+  venue?: string;
+  year?: number;
+  doi?: string;
+  arxiv_id?: string;
+  pdf_url?: string;
+  code_url?: string;
+}
+
+// Mirrors backend/src/validators/tool.validator.ts's toolInputSchema.
+export interface ToolInput {
+  tool_type?: ToolType;
+  platform?: string;
+  demo_url?: string;
+  install_command?: string;
+}
+
+// Mirrors backend/src/validators/resource.validator.ts's createResourceSchema.
+export interface CreateResourceInput {
+  title: string;
+  description?: string;
+  type: ResourceType;
+  category_id?: number;
+  tags?: string[];
+  language?: ResourceLanguage;
+  license?: string;
+  external_url?: string;
+  thumbnail_url?: string;
+  dataset?: DatasetInput;
+  paper?: PaperInput;
+  tool?: ToolInput;
+}
+
+// Mirrors backend/src/services/resources.service.ts's UploadKind.
+export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation';
+
+export interface CreateResourceResult {
+  id: string;
+  slug: string;
+  status: ResourceStatus;
+  message: string;
 }
 
 export interface ListResourcesParams {

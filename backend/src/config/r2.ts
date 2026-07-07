@@ -14,3 +14,8 @@ export const r2Client = new S3Client({
 });
 
 export const r2BucketName = env.R2_BUCKET_NAME;
+
+// Undefined unless a public domain is later configured for the bucket — see
+// R2_PUBLIC_URL in env.ts. StorageService.getPublicUrl() returns null when
+// this is unset, so callers must fall back to a signed URL.
+export const r2PublicUrl = env.R2_PUBLIC_URL?.replace(/\/+$/, '');

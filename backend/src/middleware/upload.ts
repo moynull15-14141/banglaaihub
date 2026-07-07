@@ -1,12 +1,33 @@
+import path from 'node:path';
 import multer from 'multer';
 import { ApiError } from '../utils/ApiError';
+import {
+  AVATAR_ALLOWED_EXTENSIONS,
+  AVATAR_MAX_FILE_SIZE,
+  CONTRIBUTOR_SAMPLE_ALLOWED_EXTENSIONS,
+  CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE,
+  CONTRIBUTOR_SUPPORTING_ALLOWED_EXTENSIONS,
+  DATASET_ALLOWED_EXTENSIONS,
+  DATASET_MAX_FILE_SIZE,
+  DOCUMENTATION_ALLOWED_EXTENSIONS,
+  PAPER_PDF_ALLOWED_EXTENSIONS,
+  THUMBNAIL_ALLOWED_EXTENSIONS,
+  TOOL_ASSET_ALLOWED_EXTENSIONS,
+  TOOL_ASSET_MAX_FILE_SIZE,
+} from '../services/storage.service';
 
-function createUploadMiddleware(allowedMimeTypes: string[], maxFileSize: number) {
+// Cheap first-pass filter only — rejects an obviously-wrong extension before
+// multer buffers the file into memory. The authoritative check (extension +
+// declared-MIME + magic-byte agreement against the buffered content) happens
+// server-side in StorageService.uploadObject(), which is the only place that
+// can actually inspect the bytes and is never bypassable from the client.
+function createUploadMiddleware(allowedExtensions: string[], maxFileSize: number) {
   return multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: maxFileSize },
     fileFilter: (_req, file, callback) => {
-      if (!allowedMimeTypes.includes(file.mimetype)) {
+      const extension = path.extname(file.originalname).toLowerCase();
+      if (!allowedExtensions.includes(extension)) {
         callback(new ApiError(400, 'VALIDATION_ERROR', 'File type not allowed.'));
         return;
       }
@@ -16,30 +37,39 @@ function createUploadMiddleware(allowedMimeTypes: string[], maxFileSize: number)
   });
 }
 
-const DATASET_MIME_TYPES = [
-  'text/csv',
-  'application/json',
-  'text/plain',
-  'application/zip',
-  'application/x-tar',
-  'application/gzip',
-];
-const DATASET_MAX_FILE_SIZE = 500 * 1024 * 1024;
+// Union of every kind POST /resources/:slug/upload?kind=... can accept —
+// same reasoning as CONTRIBUTOR_UPLOAD_EXTENSIONS below: `kind` (which
+// allow-list actually applies) is a query param read after this middleware
+// runs, so the narrower per-kind list + size limit is enforced
+// authoritatively inside ResourceService.uploadFile() instead. The size
+// limit here is the loosest of the five (dataset's) — each kind's tighter
+// limit is enforced server-side in StorageService.uploadObject().
+const RESOURCE_UPLOAD_EXTENSIONS = Array.from(
+  new Set([
+    ...DATASET_ALLOWED_EXTENSIONS,
+    ...THUMBNAIL_ALLOWED_EXTENSIONS,
+    ...PAPER_PDF_ALLOWED_EXTENSIONS,
+    ...TOOL_ASSET_ALLOWED_EXTENSIONS,
+    ...DOCUMENTATION_ALLOWED_EXTENSIONS,
+  ]),
+);
 
-export const datasetUpload = createUploadMiddleware(DATASET_MIME_TYPES, DATASET_MAX_FILE_SIZE);
+export const resourceUpload = createUploadMiddleware(
+  RESOURCE_UPLOAD_EXTENSIONS,
+  Math.max(DATASET_MAX_FILE_SIZE, TOOL_ASSET_MAX_FILE_SIZE),
+);
 
-const AVATAR_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const AVATAR_MAX_FILE_SIZE = 5 * 1024 * 1024;
+export const avatarUpload = createUploadMiddleware(AVATAR_ALLOWED_EXTENSIONS, AVATAR_MAX_FILE_SIZE);
 
-export const avatarUpload = createUploadMiddleware(AVATAR_MIME_TYPES, AVATAR_MAX_FILE_SIZE);
-
-// Contributor-application sample works / supporting documents — same dataset
-// types plus PDF (CVs, sample papers), capped much smaller than a dataset
-// upload since these are portfolio samples, not the resource payload itself.
-const CONTRIBUTOR_SAMPLE_MIME_TYPES = [...DATASET_MIME_TYPES, 'application/pdf'];
-const CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE = 20 * 1024 * 1024;
+// Union of sample + supporting-document extensions — `kind` (which allow-list
+// actually applies) arrives as a query param read after this middleware runs,
+// so the narrower per-kind list is enforced authoritatively inside
+// StorageService.uploadContributorSample() instead.
+const CONTRIBUTOR_UPLOAD_EXTENSIONS = Array.from(
+  new Set([...CONTRIBUTOR_SAMPLE_ALLOWED_EXTENSIONS, ...CONTRIBUTOR_SUPPORTING_ALLOWED_EXTENSIONS]),
+);
 
 export const contributorSampleUpload = createUploadMiddleware(
-  CONTRIBUTOR_SAMPLE_MIME_TYPES,
+  CONTRIBUTOR_UPLOAD_EXTENSIONS,
   CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE,
 );

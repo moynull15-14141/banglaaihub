@@ -43,6 +43,36 @@ export class EmailService {
     });
   }
 
+  // Doc 14's Email Events table + Email Service Pattern example — same
+  // function shape (`sendSubmissionApproved`), same template file names.
+  static async sendSubmissionApproved(
+    to: string,
+    userName: string,
+    resourceTitle: string,
+    resourceSlug: string,
+  ): Promise<void> {
+    await EmailService.send(
+      to,
+      `Your submission "${resourceTitle}" has been approved!`,
+      'submissionApproved',
+      { userName, resourceTitle, resourceUrl: `${env.FRONTEND_URL}/resources/${resourceSlug}` },
+    );
+  }
+
+  static async sendSubmissionRejected(
+    to: string,
+    userName: string,
+    resourceTitle: string,
+    reason?: string,
+  ): Promise<void> {
+    await EmailService.send(
+      to,
+      `An update on your submission "${resourceTitle}"`,
+      'submissionRejected',
+      { userName, resourceTitle, reason: reason ?? 'No additional feedback was provided.' },
+    );
+  }
+
   static async sendContributorApplicationSubmitted(to: string, userName: string): Promise<void> {
     await EmailService.send(
       to,

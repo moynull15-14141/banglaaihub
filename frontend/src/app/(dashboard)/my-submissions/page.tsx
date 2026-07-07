@@ -1,10 +1,5 @@
-import { ComingSoonPage } from '@/components/common/ComingSoonPage';
+import { MySubmissionsView } from '@/components/resource/MySubmissionsView';
 
 export default function MySubmissionsPage() {
-  return (
-    <ComingSoonPage
-      title="My Submissions"
-      description="Track the status of resources you've submitted here."
-    />
-  );
+  return <MySubmissionsView />;
 }

@@ -1,7 +1,8 @@
 import { Download, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { formatNumber } from '@/lib/utils/format';
+import { resourceDownloadUrl } from '@/lib/api/resources';
+import { formatBytes, formatNumber } from '@/lib/utils/format';
 import type { Resource } from '@/types/resource';
 
 interface MetaRowProps {
@@ -32,6 +33,7 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
           <dl>
             <MetaRow label="Version" value={dataset.version} />
             <MetaRow label="Format" value={dataset.file_format} />
+            <MetaRow label="File size" value={formatBytes(dataset.file_size_bytes)} />
             <MetaRow
               label="Records"
               value={dataset.record_count !== null ? formatNumber(dataset.record_count) : null}
@@ -44,9 +46,11 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
           </dl>
         </Card>
         {dataset.file_url ? (
-          <Button disabled title="Sign in required — download flow lands in a later phase">
-            <Download className="size-4" aria-hidden="true" />
-            Download dataset
+          <Button asChild>
+            <a href={resourceDownloadUrl(resource.slug)}>
+              <Download className="size-4" aria-hidden="true" />
+              Download dataset
+            </a>
           </Button>
         ) : null}
       </div>
@@ -75,10 +79,10 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
         </Card>
         <div className="flex flex-wrap gap-2">
           {paper.pdf_url ? (
-            <Button asChild variant="outline" size="sm">
-              <a href={paper.pdf_url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-4" aria-hidden="true" />
-                View PDF
+            <Button asChild size="sm">
+              <a href={resourceDownloadUrl(resource.slug)}>
+                <Download className="size-4" aria-hidden="true" />
+                View / download PDF
               </a>
             </Button>
           ) : null}
@@ -104,16 +108,27 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
             <MetaRow label="Tool type" value={tool.tool_type} />
             <MetaRow label="Platform" value={tool.platform} />
             <MetaRow label="Install command" value={tool.install_command} />
+            {tool.file_url ? <MetaRow label="Asset size" value={formatBytes(tool.file_size_bytes)} /> : null}
           </dl>
         </Card>
-        {tool.demo_url ? (
-          <Button asChild variant="outline" size="sm">
-            <a href={tool.demo_url} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4" aria-hidden="true" />
-              Try demo
-            </a>
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {tool.file_url ? (
+            <Button asChild size="sm">
+              <a href={resourceDownloadUrl(resource.slug)}>
+                <Download className="size-4" aria-hidden="true" />
+                Download asset
+              </a>
+            </Button>
+          ) : null}
+          {tool.demo_url ? (
+            <Button asChild variant="outline" size="sm">
+              <a href={tool.demo_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Try demo
+              </a>
+            </Button>
+          ) : null}
+        </div>
       </div>
     );
   }

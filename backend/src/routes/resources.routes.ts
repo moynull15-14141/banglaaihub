@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import * as commentsController from '../controllers/comments.controller';
 import * as resourcesController from '../controllers/resources.controller';
-import { authenticate } from '../middleware/authenticate';
+import { authenticate, authenticateOptional } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
-import { datasetUpload } from '../middleware/upload';
+import { resourceUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
 import {
   createCategorySchema,
@@ -11,6 +11,7 @@ import {
   listResourcesQuerySchema,
   updateCategorySchema,
   updateResourceSchema,
+  uploadResourceFileQuerySchema,
 } from '../validators/resource.validator';
 
 // Mounted at /resources
@@ -24,7 +25,7 @@ resourcesRouter.post(
   validate(createResourceSchema),
   resourcesController.create,
 );
-resourcesRouter.get('/:slug', resourcesController.getBySlug);
+resourcesRouter.get('/:slug', authenticateOptional, resourcesController.getBySlug);
 // Ownership vs. resource:edit_any is a mixed check the static authorize()
 // middleware can't express — resolved inside ResourceService.update() instead.
 resourcesRouter.put(
@@ -43,9 +44,16 @@ resourcesRouter.post(
   '/:slug/upload',
   authenticate,
   authorize('resource:upload'),
-  datasetUpload.single('file'),
+  validate(uploadResourceFileQuerySchema, 'query'),
+  resourceUpload.single('file'),
   resourcesController.uploadFile,
 );
+resourcesRouter.get(
+  '/:slug/download',
+  authenticateOptional,
+  resourcesController.download,
+);
+resourcesRouter.post('/:slug/share', authenticateOptional, resourcesController.share);
 resourcesRouter.post(
   '/:slug/bookmark',
   authenticate,

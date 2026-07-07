@@ -4,6 +4,34 @@ import { ApiError } from '../utils/ApiError';
 const RECENT_EVENTS_LIMIT = 20;
 
 export class ReputationService {
+  // First write-side caller of reputation_events — matches doc 10's
+  // schema (event_type is free-text, not a DB enum) and doc 14's point
+  // table. Writes the event row and the cached User.reputationScore
+  // together so the two never drift.
+  static async award(input: {
+    userId: string;
+    eventType: string;
+    points: number;
+    resourceId?: string | null;
+    description?: string | null;
+  }): Promise<void> {
+    await prisma.$transaction([
+      prisma.reputationEvent.create({
+        data: {
+          userId: input.userId,
+          eventType: input.eventType,
+          points: input.points,
+          resourceId: input.resourceId ?? null,
+          description: input.description ?? null,
+        },
+      }),
+      prisma.user.update({
+        where: { id: input.userId },
+        data: { reputationScore: { increment: input.points } },
+      }),
+    ]);
+  }
+
   static async getUserReputationSummaryByUsername(
     username: string,
   ): Promise<Record<string, unknown>> {

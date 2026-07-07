@@ -350,7 +350,7 @@ export class ContributorApplicationService {
     kind: 'sample' | 'supporting',
   ): Promise<{ file_url: string }> {
     const application = await this.getActiveOwn(userId);
-    const { key } = await StorageService.uploadContributorSample(userId, file);
+    const { key } = await StorageService.uploadContributorSample(userId, file, kind);
 
     await prisma.contributorApplication.update({
       where: { id: application.id },

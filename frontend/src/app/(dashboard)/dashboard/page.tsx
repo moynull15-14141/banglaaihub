@@ -5,6 +5,7 @@ import {
   Award,
   Bell,
   Bookmark,
+  BookmarkCheck,
   CheckCircle2,
   Clock,
   Download,
@@ -12,6 +13,8 @@ import {
   FilePlus2,
   ListChecks,
   Settings,
+  Share2,
+  Trophy,
   XCircle,
 } from 'lucide-react';
 import { PageContainer } from '@/components/common/PageContainer';
@@ -22,6 +25,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BecomeContributorCard } from '@/components/contributor/BecomeContributorCard';
+import { RecentSubmissionsCard } from '@/components/resource/RecentSubmissionsCard';
+import { RecentDownloadsCard } from '@/components/resource/RecentDownloadsCard';
+import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
+import { resourceHref } from '@/lib/constants/routes';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useMyDashboard } from '@/lib/hooks/useMyDashboard';
 import { hasContributorAccess } from '@/lib/constants/roles';
@@ -62,6 +69,7 @@ export default function DashboardPage() {
       : hasContributorAccess(user.roles)
         ? 'Contributor'
         : null;
+  const isContributor = Boolean(user && hasContributorAccess(user.roles));
 
   return (
     <PageContainer>
@@ -89,6 +97,48 @@ export default function DashboardPage() {
       <div className="mt-6">
         <BecomeContributorCard />
       </div>
+
+      {isContributor ? (
+        <>
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <StatCard icon={Share2} label="Total shares" value={stats.total_shares} />
+            <StatCard icon={BookmarkCheck} label="Bookmarks received" value={stats.total_bookmarks_received} />
+          </div>
+
+          {stats.most_downloaded_resource ? (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Trophy className="size-4 text-brand" aria-hidden="true" />
+                  Most downloaded resource
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between gap-3">
+                <Link
+                  href={resourceHref(stats.most_downloaded_resource.type, stats.most_downloaded_resource.slug)}
+                  className="min-w-0 flex-1 truncate font-medium hover:underline"
+                >
+                  {stats.most_downloaded_resource.title}
+                </Link>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant="outline">
+                    {RESOURCE_TYPE_LABELS[stats.most_downloaded_resource.type] ?? stats.most_downloaded_resource.type}
+                  </Badge>
+                  <Badge variant="brand">{stats.most_downloaded_resource.download_count} downloads</Badge>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <div className="mt-6">
+            <RecentDownloadsCard downloads={stats.recent_downloads} />
+          </div>
+
+          <div className="mt-6">
+            <RecentSubmissionsCard />
+          </div>
+        </>
+      ) : null}
 
       <Card className="mt-6">
         <CardHeader>

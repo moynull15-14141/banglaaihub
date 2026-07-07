@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { Sparkles } from 'lucide-react';
 import { PageContainer } from '@/components/common/PageContainer';
-import { ComingSoonPage } from '@/components/common/ComingSoonPage';
 import { RoleGuard } from '@/components/common/RoleGuard';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { ApplicationStatusBadge } from '@/components/admin/contributor-applications/ApplicationStatusBadge';
+import { SubmitResourceView } from '@/components/resource/SubmitResourceView';
 import { useMyContributorApplication } from '@/lib/hooks/useContributorApplication';
 import { CONTRIBUTOR_TIER_ROLES } from '@/lib/constants/roles';
 import { ROUTES } from '@/lib/constants/routes';
@@ -57,10 +57,7 @@ function SubmitLockView() {
 export default function SubmitPage() {
   return (
     <RoleGuard allowedRoles={[...CONTRIBUTOR_TIER_ROLES]} fallback={<SubmitLockView />}>
-      <ComingSoonPage
-        title="Submit Resource"
-        description="A form to submit datasets, papers, and tools is on the way."
-      />
+      <SubmitResourceView />
     </RoleGuard>
   );
 }

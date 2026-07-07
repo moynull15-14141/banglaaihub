@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { datasetInputSchema } from './dataset.validator';
+import { paperInputSchema } from './paper.validator';
+import { toolInputSchema } from './tool.validator';
 
 // Full set per doc 10's ResourceType enum (doc 13's example schema only shows
 // 5 of the 7 — dataset/paper/tool/tutorial/prompt — omitting project/news,
@@ -28,6 +30,8 @@ export const createResourceSchema = z.object({
   external_url: z.string().url().optional(),
   thumbnail_url: z.string().url().optional(),
   dataset: datasetInputSchema.optional(),
+  paper: paperInputSchema.optional(),
+  tool: toolInputSchema.optional(),
 });
 export type CreateResourceInput = z.infer<typeof createResourceSchema>;
 
@@ -45,6 +49,15 @@ export const listResourcesQuerySchema = z.object({
   featured: z.literal('true').optional(),
 });
 export type ListResourcesQuery = z.infer<typeof listResourcesQuerySchema>;
+
+// POST /resources/:slug/upload?kind=... — mirrors
+// contributor-application.validator.ts's addSampleFileQuerySchema exactly.
+// `dataset` is the default so the pre-existing dataset-file upload call
+// sites (which never sent `kind`) keep working unchanged.
+export const uploadResourceFileQuerySchema = z.object({
+  kind: z.enum(['dataset', 'thumbnail', 'pdf', 'asset', 'documentation']).default('dataset'),
+});
+export type UploadResourceFileQuery = z.infer<typeof uploadResourceFileQuerySchema>;
 
 export const createCategorySchema = z.object({
   name: z.string().min(2).max(100),

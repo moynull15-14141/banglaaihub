@@ -8,6 +8,9 @@ import { buildPaginationMeta } from '../utils/pagination';
 import { ensureUniqueSlug, slugify } from '../utils/slugify';
 import { writeAuditLog } from '../utils/auditLog';
 import { AuthService } from './auth.service';
+import { EmailService } from './email.service';
+import { NotificationService } from './notification.service';
+import { ReputationService } from './reputation.service';
 import { SearchService } from './search.service';
 import { StorageService, type UploadedFile } from './storage.service';
 import type {
@@ -34,7 +37,63 @@ type TagRow = Prisma.TagGetPayload<Record<string, never>>;
 
 const MODERATION_PERMISSIONS = ['resource:approve', 'resource:edit_any'];
 
-export function toResourceDto(resource: ResourceWithRelations): Record<string, unknown> {
+// Doc 14's Reputation Formula Details table — the more detailed, dedicated
+// spec (also matches the tiers already shipped in ReputationBadge.tsx),
+// used in preference to doc 10's shorter summary table where the two
+// differ (doc 10 groups tool with prompt at +10; doc 14 groups tool with
+// tutorial at +20). project/news have no documented point value in either
+// doc, so they intentionally award nothing rather than guessing a number.
+const RESOURCE_APPROVAL_POINTS: Partial<Record<string, number>> = {
+  dataset: 50,
+  paper: 30,
+  tutorial: 20,
+  tool: 20,
+  prompt: 10,
+};
+const SUBMISSION_REJECTED_POINTS = -5;
+
+// Mirrors frontend/src/lib/constants/routes.ts's resourceHref() so a
+// notification's `link` field opens the same page the site itself would
+// navigate to for this resource type.
+function resourceLink(type: string, slug: string): string {
+  switch (type) {
+    case 'dataset':
+      return `/datasets/${slug}`;
+    case 'paper':
+      return `/papers/${slug}`;
+    case 'tool':
+      return `/tools/${slug}`;
+    default:
+      return `/resources/${slug}`;
+  }
+}
+
+export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation';
+
+// thumbnail_url/documentation_url/paper.pdf_url can each be either a
+// user-pasted external URL or a previously-uploaded R2 key (see
+// StorageService.resolveUrl) — only delete-on-replace when the previous
+// value was actually ours to delete, never when it was just a link someone
+// typed in.
+function objectKeyOrNull(value: string | null): string | null {
+  if (!value || /^https?:\/\//i.test(value)) return null;
+  return value;
+}
+
+// Async because thumbnail_url/documentation_url/dataset.file_url/
+// paper.pdf_url/tool.file_url may each be either a plain external URL
+// (passed through unchanged, the pre-existing behavior) or an R2 object key
+// (resolved to a short-lived signed URL, exactly like avatars already do via
+// StorageService.resolveUrl) — the raw key itself is never returned.
+export async function toResourceDto(resource: ResourceWithRelations): Promise<Record<string, unknown>> {
+  const [thumbnailUrl, documentationUrl, datasetFileUrl, paperPdfUrl, toolFileUrl] = await Promise.all([
+    StorageService.resolveUrl(resource.thumbnailUrl),
+    StorageService.resolveUrl(resource.documentationUrl),
+    resource.dataset ? StorageService.resolveUrl(resource.dataset.fileUrl) : null,
+    resource.paper ? StorageService.resolveUrl(resource.paper.pdfUrl) : null,
+    resource.tool ? StorageService.resolveUrl(resource.tool.fileUrl) : null,
+  ]);
+
   return {
     id: resource.id,
     slug: resource.slug,
@@ -46,7 +105,8 @@ export function toResourceDto(resource: ResourceWithRelations): Record<string, u
     language: resource.language,
     license: resource.license,
     external_url: resource.externalUrl,
-    thumbnail_url: resource.thumbnailUrl,
+    thumbnail_url: thumbnailUrl,
+    documentation_url: documentationUrl,
     author: resource.author
       ? {
           id: resource.author.id,
@@ -75,7 +135,7 @@ export function toResourceDto(resource: ResourceWithRelations): Record<string, u
     dataset: resource.dataset
       ? {
           version: resource.dataset.version,
-          file_url: resource.dataset.fileUrl,
+          file_url: datasetFileUrl,
           file_size_bytes: resource.dataset.fileSizeBytes?.toString() ?? null,
           file_format: resource.dataset.fileFormat,
           record_count: resource.dataset.recordCount,
@@ -96,7 +156,7 @@ export function toResourceDto(resource: ResourceWithRelations): Record<string, u
           year: resource.paper.year,
           doi: resource.paper.doi,
           arxiv_id: resource.paper.arxivId,
-          pdf_url: resource.paper.pdfUrl,
+          pdf_url: paperPdfUrl,
           code_url: resource.paper.codeUrl,
           citation_count: resource.paper.citationCount,
         }
@@ -107,6 +167,9 @@ export function toResourceDto(resource: ResourceWithRelations): Record<string, u
           platform: resource.tool.platform,
           demo_url: resource.tool.demoUrl,
           install_command: resource.tool.installCommand,
+          file_url: toolFileUrl,
+          file_size_bytes: resource.tool.fileSizeBytes?.toString() ?? null,
+          checksum_sha256: resource.tool.checksumSha256,
         }
       : null,
   };
@@ -265,7 +328,28 @@ export class ResourceService {
       }),
     ]);
 
-    return { data: resources.map(toResourceDto), meta: buildPaginationMeta(total, pagination) };
+    return { data: await Promise.all(resources.map(toResourceDto)), meta: buildPaginationMeta(total, pagination) };
+  }
+
+  // Shared by getBySlug()/getDownloadUrl() — a non-approved resource is only
+  // visible to its own author or someone with a moderation permission.
+  // Pending/rejected/flagged resources 404 for everyone else, same as if
+  // they didn't exist (never leaks that a pending resource exists at all).
+  private static async assertCanView(
+    resource: { authorId: string | null; status: string },
+    requester?: AccessTokenPayload,
+  ): Promise<void> {
+    if (resource.status === 'approved') return;
+
+    const isOwner = requester?.userId === resource.authorId;
+    let canModerate = false;
+    if (requester) {
+      const permissions = await AuthService.getUserPermissions(requester.userId);
+      canModerate = MODERATION_PERMISSIONS.some((permission) => permissions.has(permission));
+    }
+    if (!isOwner && !canModerate) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
   }
 
   static async getBySlug(slug: string, requester?: AccessTokenPayload): Promise<unknown> {
@@ -277,24 +361,96 @@ export class ResourceService {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
     }
 
-    if (resource.status !== 'approved') {
-      const isOwner = requester?.userId === resource.authorId;
-      let canModerate = false;
-      if (requester) {
-        const permissions = await AuthService.getUserPermissions(requester.userId);
-        canModerate = MODERATION_PERMISSIONS.some((permission) => permissions.has(permission));
-      }
-      if (!isOwner && !canModerate) {
-        throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
-      }
-    }
+    await this.assertCanView(resource, requester);
 
-    void prisma.resource.update({
+    // Awaited for the same reason as the download_count increment below —
+    // a void'd write here was found (this phase) to be lossy under
+    // process-exit pressure in short-lived scripts; safe either way in the
+    // long-running server, but reliability is worth the small latency cost.
+    await prisma.resource.update({
       where: { id: resource.id },
       data: { viewCount: { increment: 1 } },
     });
 
+    await prisma.resourceAnalytics.create({
+      data: { resourceId: resource.id, eventType: 'view', userId: requester?.userId ?? null },
+    });
+
     return toResourceDto(resource);
+  }
+
+  // GET /resources/:slug/download — one unified endpoint for whichever file
+  // the resource type actually has (dataset.file_url / tool.file_url /
+  // paper.pdf_url); everything else has nothing downloadable. Never returns
+  // the raw R2 key — always a signed URL (or the external URL unchanged, if
+  // that's what's stored), same resolution StorageService.resolveUrl already
+  // uses for every other field.
+  static async getDownloadUrl(
+    slug: string,
+    requester?: AccessTokenPayload,
+  ): Promise<{ url: string }> {
+    const resource = await prisma.resource.findUnique({
+      where: { slug },
+      include: { dataset: true, paper: true, tool: true },
+    });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+
+    await this.assertCanView(resource, requester);
+
+    const key =
+      resource.type === 'dataset'
+        ? (resource.dataset?.fileUrl ?? null)
+        : resource.type === 'tool'
+          ? (resource.tool?.fileUrl ?? null)
+          : resource.type === 'paper'
+            ? (resource.paper?.pdfUrl ?? null)
+            : null;
+
+    if (!key) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'This resource has no downloadable file.');
+    }
+
+    const url = await StorageService.resolveUrl(key);
+    if (!url) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'This resource has no downloadable file.');
+    }
+
+    // Awaited, not fire-and-forget — Phase 2A found that void'd counter
+    // increments can be lost under process-exit pressure (Node cuts off
+    // in-flight I/O), which is fine for a long-running server process but
+    // made analytics writes unreliable to verify; download_count is a
+    // real user-facing stat, so it's worth the extra ~10ms.
+    await prisma.resource.update({
+      where: { id: resource.id },
+      data: { downloadCount: { increment: 1 } },
+    });
+
+    await prisma.resourceAnalytics.create({
+      data: { resourceId: resource.id, eventType: 'download', userId: requester?.userId ?? null },
+    });
+
+    await writeAuditLog({
+      actorId: requester?.userId ?? null,
+      action: 'resource.download',
+      targetType: 'resource',
+      targetId: resource.id,
+    });
+
+    return { url };
+  }
+
+  // POST /resources/:slug/share — logs a ResourceAnalytics 'share' event.
+  // There's no dedicated share_count column (doc 10 only defines view/
+  // download/bookmark counters on the base Resource); the analytics event
+  // count itself is the share count, read on demand rather than duplicated
+  // into a second, cache-able-to-drift counter.
+  static async logShare(slug: string, requester?: AccessTokenPayload): Promise<void> {
+    const resourceId = await this.resolveIdBySlug(slug);
+    await prisma.resourceAnalytics.create({
+      data: { resourceId, eventType: 'share', userId: requester?.userId ?? null },
+    });
   }
 
   static async create(
@@ -350,6 +506,34 @@ export class ResourceService {
             dataSource: input.dataset?.data_source ?? null,
             methodology: input.dataset?.methodology ?? null,
             parentId,
+          },
+        });
+      }
+
+      if (input.type === 'paper') {
+        await tx.paper.create({
+          data: {
+            resourceId: resource.id,
+            abstract: input.paper?.abstract ?? null,
+            authors: input.paper?.authors ?? [],
+            venue: input.paper?.venue ?? null,
+            year: input.paper?.year ?? null,
+            doi: input.paper?.doi ?? null,
+            arxivId: input.paper?.arxiv_id ?? null,
+            pdfUrl: input.paper?.pdf_url ?? null,
+            codeUrl: input.paper?.code_url ?? null,
+          },
+        });
+      }
+
+      if (input.type === 'tool') {
+        await tx.tool.create({
+          data: {
+            resourceId: resource.id,
+            toolType: input.tool?.tool_type ?? null,
+            platform: input.tool?.platform ?? null,
+            demoUrl: input.tool?.demo_url ?? null,
+            installCommand: input.tool?.install_command ?? null,
           },
         });
       }
@@ -500,6 +684,21 @@ export class ResourceService {
       newValue: { status: 'approved' },
     });
 
+    if (resource.authorId) {
+      const points = RESOURCE_APPROVAL_POINTS[resource.type];
+      if (points) {
+        await ReputationService.award({
+          userId: resource.authorId,
+          eventType: `${resource.type}_approved`,
+          points,
+          resourceId: resource.id,
+          description: `"${resource.title}" was approved`,
+        });
+      }
+    }
+
+    await this.notifySubmissionDecision(resource, 'approved');
+
     void this.syncSearchIndex(resourceId);
 
     return toResourceDto(await this.getResourceWithRelations(resourceId));
@@ -522,9 +721,60 @@ export class ResourceService {
       newValue: { status: 'rejected', reason: reason ?? null },
     });
 
+    if (resource.authorId) {
+      await ReputationService.award({
+        userId: resource.authorId,
+        eventType: 'submission_rejected',
+        points: SUBMISSION_REJECTED_POINTS,
+        resourceId: resource.id,
+        description: `"${resource.title}" was rejected`,
+      });
+    }
+
+    await this.notifySubmissionDecision(resource, 'rejected', reason);
+
     void this.syncSearchIndex(resourceId);
 
     return toResourceDto(await this.getResourceWithRelations(resourceId));
+  }
+
+  // Shared by approve()/reject() — fetches the author once, creates the
+  // matching notification (doc 10's `submission_approved`/`submission_rejected`
+  // types), and fires the matching email. Mirrors the exact
+  // NotificationService.create() (awaited) + `void EmailService...()`
+  // (fire-and-forget) pattern already established in
+  // contributor-application.service.ts.
+  private static async notifySubmissionDecision(
+    resource: { id: string; slug: string; title: string; type: string; authorId: string | null },
+    decision: 'approved' | 'rejected',
+    reason?: string,
+  ): Promise<void> {
+    if (!resource.authorId) return;
+
+    const author = await prisma.user.findUnique({
+      where: { id: resource.authorId },
+      select: { email: true, displayName: true, username: true },
+    });
+    if (!author) return;
+
+    const userName = author.displayName ?? author.username;
+
+    await NotificationService.create({
+      userId: resource.authorId,
+      type: decision === 'approved' ? 'submission_approved' : 'submission_rejected',
+      title: decision === 'approved' ? 'Your submission was approved' : 'Your submission was not approved',
+      message:
+        decision === 'approved'
+          ? `"${resource.title}" is now live on Bangla AI Hub.`
+          : `"${resource.title}" was not approved.${reason ? ` ${reason}` : ''}`,
+      link: resourceLink(resource.type, resource.slug),
+    });
+
+    if (decision === 'approved') {
+      void EmailService.sendSubmissionApproved(author.email, userName, resource.title, resource.slug);
+    } else {
+      void EmailService.sendSubmissionRejected(author.email, userName, resource.title, reason);
+    }
   }
 
   static async setFeatured(resourceId: string, featured: boolean, actorId: string): Promise<unknown> {
@@ -578,29 +828,79 @@ export class ResourceService {
     slug: string,
     requester: AccessTokenPayload,
     file: UploadedFile,
+    kind: UploadKind = 'dataset',
   ): Promise<{ file_url: string }> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true },
+      include: { dataset: true, paper: true, tool: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
-    }
-
-    if (resource.type !== 'dataset' || !resource.dataset) {
-      throw new ApiError(400, 'VALIDATION_ERROR', 'Only dataset resources support file uploads.');
     }
 
     if (resource.authorId !== requester.userId) {
       throw new ApiError(403, 'FORBIDDEN', 'Only the resource author can upload its file.');
     }
 
-    const { key, checksum } = await StorageService.uploadDatasetFile(resource.id, file);
+    let key: string;
 
-    await prisma.dataset.update({
-      where: { resourceId: resource.id },
-      data: { fileUrl: key, fileSizeBytes: BigInt(file.size), checksumSha256: checksum },
-    });
+    switch (kind) {
+      case 'dataset': {
+        if (resource.type !== 'dataset' || !resource.dataset) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Only dataset resources support dataset file uploads.');
+        }
+        const previousKey = resource.dataset.fileUrl;
+        const uploaded = await StorageService.uploadDatasetFile(resource.id, file);
+        key = uploaded.key;
+        await prisma.dataset.update({
+          where: { resourceId: resource.id },
+          data: { fileUrl: key, fileSizeBytes: BigInt(file.size), checksumSha256: uploaded.checksum },
+        });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+      case 'thumbnail': {
+        const previousKey = objectKeyOrNull(resource.thumbnailUrl);
+        const uploaded = await StorageService.uploadThumbnail(resource.id, file);
+        key = uploaded.key;
+        await prisma.resource.update({ where: { id: resource.id }, data: { thumbnailUrl: key } });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+      case 'pdf': {
+        if (resource.type !== 'paper' || !resource.paper) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Only paper resources support PDF uploads.');
+        }
+        const previousKey = objectKeyOrNull(resource.paper.pdfUrl);
+        const uploaded = await StorageService.uploadPaperPdf(resource.id, file);
+        key = uploaded.key;
+        await prisma.paper.update({ where: { resourceId: resource.id }, data: { pdfUrl: key } });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+      case 'asset': {
+        if (resource.type !== 'tool' || !resource.tool) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Only tool resources support asset uploads.');
+        }
+        const previousKey = resource.tool.fileUrl;
+        const uploaded = await StorageService.uploadToolAsset(resource.id, file);
+        key = uploaded.key;
+        await prisma.tool.update({
+          where: { resourceId: resource.id },
+          data: { fileUrl: key, fileSizeBytes: BigInt(file.size), checksumSha256: uploaded.checksum },
+        });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+      case 'documentation': {
+        const previousKey = objectKeyOrNull(resource.documentationUrl);
+        const uploaded = await StorageService.uploadDocumentation(resource.id, file);
+        key = uploaded.key;
+        await prisma.resource.update({ where: { id: resource.id }, data: { documentationUrl: key } });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+    }
 
     const fileUrl = await StorageService.getSignedDownloadUrl(key);
 
@@ -609,8 +909,10 @@ export class ResourceService {
       action: 'resource.upload_file',
       targetType: 'resource',
       targetId: resource.id,
-      newValue: { key, size: file.size },
+      newValue: { key, size: file.size, kind },
     });
+
+    void this.syncSearchIndex(resource.id);
 
     return { file_url: fileUrl };
   }
@@ -675,7 +977,7 @@ export class ResourceService {
       }),
     ]);
 
-    return { data: resources.map(toResourceDto), meta: buildPaginationMeta(total, pagination) };
+    return { data: await Promise.all(resources.map(toResourceDto)), meta: buildPaginationMeta(total, pagination) };
   }
 
   static async createCategory(input: CreateCategoryInput, actorId: string): Promise<unknown> {
@@ -835,6 +1137,6 @@ export class ResourceService {
       }),
     ]);
 
-    return { data: resources.map(toResourceDto), meta: buildPaginationMeta(total, pagination) };
+    return { data: await Promise.all(resources.map(toResourceDto)), meta: buildPaginationMeta(total, pagination) };
   }
 }
