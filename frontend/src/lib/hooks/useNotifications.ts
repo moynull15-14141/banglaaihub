@@ -11,10 +11,14 @@ import type { ListNotificationsParams } from '@/types/notification';
 
 const NOTIFICATIONS_KEY = ['notifications'];
 
-export function useNotifications(params: ListNotificationsParams = {}) {
+export function useNotifications(
+  params: ListNotificationsParams = {},
+  options: { refetchInterval?: number } = {},
+) {
   return useQuery({
     queryKey: [...NOTIFICATIONS_KEY, params],
     queryFn: () => listNotifications(params),
+    refetchInterval: options.refetchInterval,
   });
 }
 

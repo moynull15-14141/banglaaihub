@@ -37,6 +37,7 @@ const SUBMISSION_STATUS_MAP: Record<string, 'pending' | 'approved' | 'rejected'>
 
 async function resolveAvatarUrl(key: string | null): Promise<string | null> {
   if (!key) return null;
+  if (/^https?:\/\//i.test(key)) return key;
   return StorageService.getSignedAvatarUrl(key);
 }
 

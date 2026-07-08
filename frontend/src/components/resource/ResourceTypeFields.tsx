@@ -40,6 +40,7 @@ export function ResourceTypeFields({
             value={dataset.version ?? ''}
             onChange={(event) => onDatasetChange({ version: event.target.value })}
             placeholder="v1.0"
+            maxLength={20}
           />
         </div>
         <div className="space-y-1.5">
@@ -49,6 +50,7 @@ export function ResourceTypeFields({
             value={dataset.file_format ?? ''}
             onChange={(event) => onDatasetChange({ file_format: event.target.value })}
             placeholder="CSV, JSON, ZIP…"
+            maxLength={50}
           />
         </div>
         <div className="space-y-1.5">
@@ -70,6 +72,7 @@ export function ResourceTypeFields({
             value={dataset.annotation_type ?? ''}
             onChange={(event) => onDatasetChange({ annotation_type: event.target.value })}
             placeholder="classification, NER, POS…"
+            maxLength={100}
           />
         </div>
         <div className="space-y-1.5">
@@ -79,6 +82,7 @@ export function ResourceTypeFields({
             value={dataset.domain ?? ''}
             onChange={(event) => onDatasetChange({ domain: event.target.value })}
             placeholder="news, social media, medical…"
+            maxLength={100}
           />
         </div>
         <div className="space-y-1.5">
@@ -129,6 +133,7 @@ export function ResourceTypeFields({
             value={paper.abstract ?? ''}
             onChange={(event) => onPaperChange({ abstract: event.target.value })}
             rows={4}
+            maxLength={5000}
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
@@ -154,6 +159,7 @@ export function ResourceTypeFields({
             value={paper.venue ?? ''}
             onChange={(event) => onPaperChange({ venue: event.target.value })}
             placeholder="ACL 2026, NeurIPS 2026…"
+            maxLength={200}
           />
         </div>
         <div className="space-y-1.5">
@@ -169,7 +175,12 @@ export function ResourceTypeFields({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="paper-doi">DOI</Label>
-          <Input id="paper-doi" value={paper.doi ?? ''} onChange={(event) => onPaperChange({ doi: event.target.value })} />
+          <Input
+            id="paper-doi"
+            value={paper.doi ?? ''}
+            onChange={(event) => onPaperChange({ doi: event.target.value })}
+            maxLength={200}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="paper-arxiv">arXiv ID</Label>
@@ -178,6 +189,7 @@ export function ResourceTypeFields({
             value={paper.arxiv_id ?? ''}
             onChange={(event) => onPaperChange({ arxiv_id: event.target.value })}
             placeholder="2601.00000"
+            maxLength={50}
           />
         </div>
         <div className="space-y-1.5">
@@ -231,6 +243,7 @@ export function ResourceTypeFields({
             value={tool.platform ?? ''}
             onChange={(event) => onToolChange({ platform: event.target.value })}
             placeholder="Python, JavaScript, HuggingFace…"
+            maxLength={100}
           />
         </div>
         <div className="space-y-1.5">

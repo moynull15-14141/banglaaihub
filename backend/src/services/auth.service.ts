@@ -38,6 +38,7 @@ export interface PublicUser {
   email: string;
   username: string;
   displayName: string | null;
+  avatarUrl: string | null;
   reputationScore: number;
   roles: string[];
 }
@@ -83,6 +84,7 @@ function toPublicUser(user: {
   email: string;
   username: string;
   displayName: string | null;
+  avatarUrl?: string | null;
   reputationScore: number;
 }): Omit<PublicUser, 'roles'> {
   return {
@@ -90,6 +92,9 @@ function toPublicUser(user: {
     email: user.email,
     username: user.username,
     displayName: user.displayName,
+    // Only pass through externally-hosted URLs (e.g. Google's photo) here —
+    // R2 object keys need signing, which this synchronous mapper can't do.
+    avatarUrl: user.avatarUrl && /^https?:\/\//i.test(user.avatarUrl) ? user.avatarUrl : null,
     reputationScore: user.reputationScore,
   };
 }
@@ -396,6 +401,7 @@ export class AuthService {
       sub: string;
       email: string;
       name?: string;
+      picture?: string;
     };
 
     let user = await prisma.user.findFirst({
@@ -417,6 +423,7 @@ export class AuthService {
           email: profile.email,
           username: profile.email.split('@')[0] + '_' + profile.sub.slice(-6),
           displayName: profile.name ?? null,
+          avatarUrl: profile.picture ?? null,
           googleId: profile.sub,
           emailVerified: true,
           userRoles: { create: { roleId: defaultRole.id } },
@@ -428,7 +435,16 @@ export class AuthService {
 
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, context);
     const roles = await getUserRoleNames(user.id);
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    // Refresh the Google avatar on login, but never clobber a self-uploaded
+    // avatar (stored as an R2 key rather than an http(s) URL).
+    const hasCustomAvatar = !!user.avatarUrl && !/^https?:\/\//i.test(user.avatarUrl);
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        ...(profile.picture && !hasCustomAvatar ? { avatarUrl: profile.picture } : {}),
+      },
+    });
 
     return { accessToken, refreshToken, user: { ...toPublicUser(user), roles } };
   }

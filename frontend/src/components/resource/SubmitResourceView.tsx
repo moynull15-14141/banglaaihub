@@ -76,8 +76,20 @@ function emptyForm(): CreateResourceInput {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (isAxiosError(error) && typeof error.response?.data?.error?.message === 'string') {
-    return error.response.data.error.message;
+  if (isAxiosError(error)) {
+    const apiError = error.response?.data?.error as
+      | { message?: string; details?: { field: string; message: string }[] }
+      | undefined;
+    // Surface the first field-level Zod issue (e.g. "external_url: Invalid
+    // url") when present — the generic "Input validation failed." on its
+    // own gives no clue which field to fix.
+    const firstDetail = apiError?.details?.[0];
+    if (firstDetail) {
+      return `${firstDetail.field}: ${firstDetail.message}`;
+    }
+    if (typeof apiError?.message === 'string') {
+      return apiError.message;
+    }
   }
   return fallback;
 }
@@ -93,6 +105,17 @@ function cleanObject<T extends object>(obj: T): T {
     (result as Record<string, unknown>)[key] = value;
   }
   return result;
+}
+
+// The backend validates every *_url field with Zod's `.url()`, which
+// requires a scheme — "example.com" fails, "https://example.com" doesn't.
+// Most people type URLs without a scheme, so this was silently producing a
+// 400 on submit. Prepending https:// when one's missing keeps the strict
+// server-side validation but removes the most common way to trip it.
+function normalizeUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 export function SubmitResourceView() {
@@ -226,7 +249,7 @@ export function SubmitResourceView() {
 
   const tags = tagsText
     .split(',')
-    .map((tag) => tag.trim())
+    .map((tag) => tag.trim().slice(0, 50))
     .filter(Boolean)
     .slice(0, 10);
 
@@ -264,6 +287,17 @@ export function SubmitResourceView() {
   }
 
   function buildPayload(): CreateResourceInput {
+    const dataset = cleanObject(form.dataset ?? {});
+    const paper = cleanObject({
+      ...form.paper,
+      pdf_url: normalizeUrl(form.paper?.pdf_url),
+      code_url: normalizeUrl(form.paper?.code_url),
+    });
+    const tool = cleanObject({
+      ...form.tool,
+      demo_url: normalizeUrl(form.tool?.demo_url),
+    });
+
     return cleanObject({
       title: form.title.trim(),
       description: form.description?.trim(),
@@ -272,11 +306,11 @@ export function SubmitResourceView() {
       tags,
       language: form.language,
       license: form.license?.trim(),
-      external_url: form.external_url?.trim(),
-      thumbnail_url: thumbnailFile ? undefined : form.thumbnail_url?.trim(),
-      dataset: form.type === 'dataset' ? cleanObject(form.dataset ?? {}) : undefined,
-      paper: form.type === 'paper' ? cleanObject(form.paper ?? {}) : undefined,
-      tool: form.type === 'tool' ? cleanObject(form.tool ?? {}) : undefined,
+      external_url: normalizeUrl(form.external_url),
+      thumbnail_url: thumbnailFile ? undefined : normalizeUrl(form.thumbnail_url),
+      dataset: form.type === 'dataset' ? dataset : undefined,
+      paper: form.type === 'paper' ? paper : undefined,
+      tool: form.type === 'tool' ? tool : undefined,
     });
   }
 
@@ -794,6 +828,7 @@ export function SubmitResourceView() {
                   value={form.license ?? ''}
                   onChange={(event) => setField('license', event.target.value)}
                   placeholder="MIT, CC-BY-4.0…"
+                  maxLength={100}
                 />
               </div>
               <ThumbnailUrlInput

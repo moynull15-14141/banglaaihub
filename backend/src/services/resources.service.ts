@@ -231,27 +231,34 @@ function resolveSort(sort?: string): Prisma.ResourceOrderByWithRelationInput {
   }
 }
 
+// Batched to a fixed ~4 round trips regardless of tag count — the previous
+// per-tag upsert loop (2 sequential round trips per tag) could exceed
+// Prisma's 5s interactive-transaction timeout against the remote Supabase
+// pooler once a submission had several tags.
 async function linkTags(
   tx: Prisma.TransactionClient,
   resourceId: string,
   tagNames: string[],
 ): Promise<void> {
-  for (const rawName of tagNames) {
-    const name = rawName.trim().toLowerCase();
-    if (!name) continue;
+  const names = Array.from(new Set(tagNames.map((raw) => raw.trim().toLowerCase()).filter(Boolean)));
+  if (names.length === 0) return;
 
-    const tag = await tx.tag.upsert({
-      where: { name },
-      update: { usageCount: { increment: 1 } },
-      create: { name, slug: slugify(name), usageCount: 1 },
-    });
+  await tx.tag.createMany({
+    data: names.map((name) => ({ name, slug: slugify(name), usageCount: 0 })),
+    skipDuplicates: true,
+  });
 
-    await tx.resourceTag.upsert({
-      where: { resourceId_tagId: { resourceId, tagId: tag.id } },
-      update: {},
-      create: { resourceId, tagId: tag.id },
-    });
-  }
+  await tx.tag.updateMany({
+    where: { name: { in: names } },
+    data: { usageCount: { increment: 1 } },
+  });
+
+  const tags = await tx.tag.findMany({ where: { name: { in: names } }, select: { id: true } });
+
+  await tx.resourceTag.createMany({
+    data: tags.map((tag) => ({ resourceId, tagId: tag.id })),
+    skipDuplicates: true,
+  });
 }
 
 async function assertCanModify(
@@ -653,7 +660,7 @@ export class ResourceService {
       }
 
       return resource;
-    });
+    }, { timeout: 15000 });
 
     await writeAuditLog({
       actorId: authorId,
@@ -763,7 +770,7 @@ export class ResourceService {
         await tx.resourceTag.deleteMany({ where: { resourceId: resource.id } });
         await linkTags(tx, resource.id, input.tags);
       }
-    });
+    }, { timeout: 15000 });
 
     await writeAuditLog({
       actorId: requester.userId,

@@ -78,6 +78,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       email: result.user.email,
       username: result.user.username,
       display_name: result.user.displayName,
+      avatar_url: result.user.avatarUrl,
       reputation_score: result.user.reputationScore,
       roles: result.user.roles,
     },

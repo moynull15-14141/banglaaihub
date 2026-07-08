@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, LogOut, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +13,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/user/UserAvatar';
+import { NotificationBell } from '@/components/notification/NotificationBell';
+import { SearchBar } from '@/components/search/SearchBar';
 import { MobileMenu } from '@/components/layout/MobileMenu';
 import { MAIN_NAV_LINKS } from '@/components/layout/mainNavLinks';
 import { canAccessAdminPanel } from '@/components/admin/adminNavLinks';
@@ -30,6 +32,7 @@ export function Navbar() {
   const { user, isAuthenticated } = useAuth();
   const handleLogout = useLogout();
   const pathname = usePathname();
+  const router = useRouter();
   const showAdminPanelLink = canAccessAdminPanel(user?.roles ?? []);
   const contributorNavStatus = useContributorNavStatus();
 
@@ -44,6 +47,12 @@ export function Navbar() {
             </span>
             <span className="hidden sm:inline">Bangla AI Hub</span>
           </Link>
+          <div className="hidden w-64 md:block">
+            <SearchBar
+              placeholder="Search…"
+              onSubmit={(value) => router.push(`${ROUTES.search}?q=${encodeURIComponent(value)}`)}
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
@@ -69,60 +78,63 @@ export function Navbar() {
             })}
           </nav>
           {isAuthenticated && user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  <UserAvatar
-                    avatarUrl={user.avatar_url}
-                    name={user.display_name ?? user.username}
-                    className="size-8"
-                  />
-                  <span className="hidden text-sm font-medium sm:inline">
-                    {user.display_name ?? user.username}
-                  </span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>{user.display_name ?? user.username}</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href={ROUTES.dashboard}>
-                    <LayoutDashboard />
-                    Dashboard
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={ROUTES.profile}>
-                    <UserIcon />
-                    Profile
-                  </Link>
-                </DropdownMenuItem>
-                {contributorNavStatus ? (
+            <>
+              <NotificationBell />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    <UserAvatar
+                      avatarUrl={user.avatar_url}
+                      name={user.display_name ?? user.username}
+                      className="size-8"
+                    />
+                    <span className="hidden text-sm font-medium sm:inline">
+                      {user.display_name ?? user.username}
+                    </span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>{user.display_name ?? user.username}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href={contributorNavStatus.href}>
-                      <Sparkles />
-                      {contributorNavStatus.label}
+                    <Link href={ROUTES.dashboard}>
+                      <LayoutDashboard />
+                      Dashboard
                     </Link>
                   </DropdownMenuItem>
-                ) : null}
-                {showAdminPanelLink ? (
                   <DropdownMenuItem asChild>
-                    <Link href={ROUTES.admin}>
-                      <ShieldCheck />
-                      Admin Panel
+                    <Link href={ROUTES.profile}>
+                      <UserIcon />
+                      Profile
                     </Link>
                   </DropdownMenuItem>
-                ) : null}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={handleLogout}>
-                  <LogOut />
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {contributorNavStatus ? (
+                    <DropdownMenuItem asChild>
+                      <Link href={contributorNavStatus.href}>
+                        <Sparkles />
+                        {contributorNavStatus.label}
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
+                  {showAdminPanelLink ? (
+                    <DropdownMenuItem asChild>
+                      <Link href={ROUTES.admin}>
+                        <ShieldCheck />
+                        Admin Panel
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={handleLogout}>
+                    <LogOut />
+                    Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           ) : (
             <>
               <Button asChild variant="ghost" size="sm">
