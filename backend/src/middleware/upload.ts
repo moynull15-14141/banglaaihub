@@ -11,6 +11,8 @@ import {
   DATASET_MAX_FILE_SIZE,
   DOCUMENTATION_ALLOWED_EXTENSIONS,
   PAPER_PDF_ALLOWED_EXTENSIONS,
+  RESOURCE_ATTACHMENT_ALLOWED_EXTENSIONS,
+  RESOURCE_ATTACHMENT_MAX_FILE_SIZE,
   THUMBNAIL_ALLOWED_EXTENSIONS,
   TOOL_ASSET_ALLOWED_EXTENSIONS,
   TOOL_ASSET_MAX_FILE_SIZE,
@@ -72,4 +74,13 @@ const CONTRIBUTOR_UPLOAD_EXTENSIONS = Array.from(
 export const contributorSampleUpload = createUploadMiddleware(
   CONTRIBUTOR_UPLOAD_EXTENSIONS,
   CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE,
+);
+
+// POST /resources/:slug/attachments — the per-resource-type allow-list
+// (which one actually applies) is enforced authoritatively in
+// StorageService.uploadResourceAttachment(); this is only the cheap
+// first-pass filter, same pattern as resourceUpload above.
+export const resourceAttachmentUpload = createUploadMiddleware(
+  RESOURCE_ATTACHMENT_ALLOWED_EXTENSIONS,
+  RESOURCE_ATTACHMENT_MAX_FILE_SIZE,
 );

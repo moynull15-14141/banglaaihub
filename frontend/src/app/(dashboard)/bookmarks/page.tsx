@@ -1,10 +1,5 @@
-import { ComingSoonPage } from '@/components/common/ComingSoonPage';
+import { BookmarksView } from '@/components/resource/BookmarksView';
 
 export default function BookmarksPage() {
-  return (
-    <ComingSoonPage
-      title="Bookmarks"
-      description="Saved datasets, papers, and tools will show up here."
-    />
-  );
+  return <BookmarksView />;
 }

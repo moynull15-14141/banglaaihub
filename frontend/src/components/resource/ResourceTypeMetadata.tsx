@@ -1,7 +1,12 @@
-import { Download, ExternalLink } from 'lucide-react';
+'use client';
+
+import { useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { resourceDownloadUrl } from '@/lib/api/resources';
+import { DownloadButton } from '@/components/resource/DownloadButton';
+import { PdfPreviewDialog } from '@/components/resource/PdfPreviewDialog';
+import { getResourceDownload } from '@/lib/api/resources';
 import { formatBytes, formatNumber } from '@/lib/utils/format';
 import type { Resource } from '@/types/resource';
 
@@ -25,6 +30,16 @@ interface ResourceTypeMetadataProps {
 }
 
 export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  async function handlePreviewPdf() {
+    setPreviewOpen(true);
+    setPreviewUrl(null);
+    const { url } = await getResourceDownload(resource.slug);
+    setPreviewUrl(url);
+  }
+
   if (resource.type === 'dataset' && resource.dataset) {
     const { dataset } = resource;
     return (
@@ -46,12 +61,7 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
           </dl>
         </Card>
         {dataset.file_url ? (
-          <Button asChild>
-            <a href={resourceDownloadUrl(resource.slug)}>
-              <Download className="size-4" aria-hidden="true" />
-              Download dataset
-            </a>
-          </Button>
+          <DownloadButton slug={resource.slug} label="Download dataset" />
         ) : null}
       </div>
     );
@@ -79,12 +89,12 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
         </Card>
         <div className="flex flex-wrap gap-2">
           {paper.pdf_url ? (
-            <Button asChild size="sm">
-              <a href={resourceDownloadUrl(resource.slug)}>
-                <Download className="size-4" aria-hidden="true" />
-                View / download PDF
-              </a>
-            </Button>
+            <>
+              <Button type="button" variant="outline" size="sm" onClick={() => void handlePreviewPdf()}>
+                Preview
+              </Button>
+              <DownloadButton slug={resource.slug} label="Download PDF" size="sm" />
+            </>
           ) : null}
           {paper.code_url ? (
             <Button asChild variant="outline" size="sm">
@@ -95,6 +105,12 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
             </Button>
           ) : null}
         </div>
+        <PdfPreviewDialog
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          title={resource.title}
+          url={previewUrl}
+        />
       </div>
     );
   }
@@ -113,12 +129,7 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
         </Card>
         <div className="flex flex-wrap gap-2">
           {tool.file_url ? (
-            <Button asChild size="sm">
-              <a href={resourceDownloadUrl(resource.slug)}>
-                <Download className="size-4" aria-hidden="true" />
-                Download asset
-              </a>
-            </Button>
+            <DownloadButton slug={resource.slug} label="Download asset" size="sm" />
           ) : null}
           {tool.demo_url ? (
             <Button asChild variant="outline" size="sm">

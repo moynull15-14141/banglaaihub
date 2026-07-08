@@ -34,6 +34,40 @@ function toReportDto(report: ReportWithRelations): Record<string, unknown> {
 }
 
 export class ReportService {
+  static async create(
+    reporterId: string,
+    resourceId: string,
+    reason: 'spam' | 'copyright' | 'wrong_data' | 'duplicate' | 'inappropriate',
+    description?: string,
+  ): Promise<unknown> {
+    const resource = await prisma.resource.findUnique({ where: { id: resourceId } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+
+    const existing = await prisma.report.findFirst({
+      where: { resourceId, reporterId, status: 'pending' },
+    });
+    if (existing) {
+      throw new ApiError(409, 'CONFLICT', 'You already have a pending report for this resource.');
+    }
+
+    const report = await prisma.report.create({
+      data: { reporterId, resourceId, reason, description: description ?? null },
+      include: reportInclude,
+    });
+
+    await writeAuditLog({
+      actorId: reporterId,
+      action: 'report.create',
+      targetType: 'resource',
+      targetId: resourceId,
+      newValue: { reportId: report.id, reason },
+    });
+
+    return toReportDto(report);
+  }
+
   static async list(
     query: ListReportsQuery,
     pagination: PaginationParams,

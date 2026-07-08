@@ -132,6 +132,15 @@ export class UserService {
       avatar_url: await resolveAvatarUrl(user.avatarUrl),
       bio: user.bio,
       institution: user.institution,
+      location: user.location,
+      website_url: user.websiteUrl,
+      github_url: user.githubUrl,
+      scholar_url: user.scholarUrl,
+      kaggle_url: user.kaggleUrl,
+      huggingface_url: user.huggingfaceUrl,
+      linkedin_url: user.linkedinUrl,
+      orcid_id: user.orcidId,
+      x_url: user.xUrl,
       reputation_score: user.reputationScore,
       is_verified: user.isVerified,
       resources: await Promise.all(user.authoredResources.map(toResourceDto)),
@@ -244,24 +253,42 @@ export class UserService {
   static async listBookmarks(
     userId: string,
     pagination: PaginationParams,
+    sort?: string,
   ): Promise<{ data: unknown[]; meta: PaginationMeta }> {
     const where = { userId };
+    const orderBy: Prisma.BookmarkOrderByWithRelationInput =
+      sort === 'oldest'
+        ? { createdAt: 'asc' }
+        : sort === 'popular'
+          ? { resource: { viewCount: 'desc' } }
+          : sort === 'downloads'
+            ? { resource: { downloadCount: 'desc' } }
+            : { createdAt: 'desc' };
 
     const [total, bookmarks] = await Promise.all([
       prisma.bookmark.count({ where }),
       prisma.bookmark.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (pagination.page - 1) * pagination.limit,
         take: pagination.limit,
         include: { resource: { include: resourceInclude } },
       }),
     ]);
 
-    return {
-      data: await Promise.all(bookmarks.map((bookmark) => toResourceDto(bookmark.resource))),
-      meta: buildPaginationMeta(total, pagination),
-    };
+    // Every resource here is bookmarked by definition (that's what this
+    // query selects) — cheaper and safer than re-deriving it per row the
+    // way getBySlug() does for a single arbitrary resource.
+    const data = await Promise.all(
+      bookmarks.map(async (bookmark) => {
+        const dto = await toResourceDto(bookmark.resource);
+        dto.is_bookmarked = true;
+        dto.bookmarked_at = bookmark.createdAt;
+        return dto;
+      }),
+    );
+
+    return { data, meta: buildPaginationMeta(total, pagination) };
   }
 
   static async addBookmark(userId: string, resourceId: string): Promise<void> {

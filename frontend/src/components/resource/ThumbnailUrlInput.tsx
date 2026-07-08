@@ -15,6 +15,15 @@ interface ThumbnailUrlInputProps {
   onChange: (value: string) => void;
   file: File | null;
   onFileChange: (file: File | null) => void;
+  // Optional — Submit defers the actual upload until after the resource
+  // exists, so it never passes these (FileDropzone just shows "selected,
+  // not uploaded yet"). Edit uploads immediately on selection and passes
+  // these through for live progress/error feedback.
+  uploading?: boolean;
+  progress?: number;
+  bytesPerSecond?: number | null;
+  uploaded?: boolean;
+  uploadError?: string | null;
 }
 
 type PreviewState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -34,7 +43,18 @@ function isValidUrl(value: string): boolean {
 // StorageService pipeline as everything else (POST /resources/:slug/upload
 // ?kind=thumbnail), triggered after the resource is created, exactly like
 // the dataset-file flow.
-export function ThumbnailUrlInput({ id, value, onChange, file, onFileChange }: ThumbnailUrlInputProps) {
+export function ThumbnailUrlInput({
+  id,
+  value,
+  onChange,
+  file,
+  onFileChange,
+  uploading = false,
+  progress = 0,
+  bytesPerSecond,
+  uploaded = false,
+  uploadError,
+}: ThumbnailUrlInputProps) {
   const [mode, setMode] = useState<'url' | 'upload'>(file ? 'upload' : 'url');
   const [previewState, setPreviewState] = useState<PreviewState>('idle');
 
@@ -87,6 +107,11 @@ export function ThumbnailUrlInput({ id, value, onChange, file, onFileChange }: T
           accept={THUMBNAIL_FILE_ACCEPT}
           file={file}
           onFileSelect={onFileChange}
+          uploading={uploading}
+          progress={progress}
+          bytesPerSecond={bytesPerSecond}
+          uploaded={uploaded}
+          error={uploadError}
         />
       ) : (
         <div className="flex items-start gap-3">

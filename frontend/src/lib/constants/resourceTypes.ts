@@ -34,3 +34,29 @@ export const TOOL_TYPE_OPTIONS: { value: ToolType; label: string }[] = [
   { value: 'prompt', label: 'Prompt' },
   { value: 'tutorial', label: 'Tutorial' },
 ];
+
+// Mirrors backend/src/services/storage.service.ts's
+// RESOURCE_ATTACHMENT_EXTENSIONS_BY_TYPE / _MAX_FILE_SIZE_BY_TYPE (doc 10
+// table 22) — kept in sync manually, same as DATASET_FILE_ACCEPT in
+// SubmitResourceView.tsx, since the server enforces this regardless of what
+// the client hints at. Every type gets attachment support, including
+// tutorial/prompt/project/news, which have no legacy single-slot file field.
+export const RESOURCE_ATTACHMENT_ACCEPT_BY_TYPE: Record<ResourceType, string> = {
+  dataset: '.csv,.json,.parquet,.zip,.tar,.gz',
+  paper: '.pdf',
+  tool: '.zip,.7z,.tar,.gz',
+  tutorial: '.pdf,.docx,.pptx,.zip,.md',
+  prompt: '.txt,.json,.md,.pdf',
+  project: '.zip,.pdf,.docx,.pptx',
+  news: '.pdf,.jpg,.jpeg,.png',
+};
+
+export const RESOURCE_ATTACHMENT_HINT_BY_TYPE: Record<ResourceType, string> = {
+  dataset: 'CSV, JSON, Parquet, ZIP, TAR, GZIP — up to 500MB each',
+  paper: 'PDF — up to 50MB each',
+  tool: 'ZIP, 7Z, TAR, GZIP — up to 200MB each',
+  tutorial: 'PDF, DOCX, PPTX, ZIP, Markdown — up to 100MB each',
+  prompt: 'TXT, JSON, Markdown, PDF — up to 10MB each',
+  project: 'ZIP, PDF, DOCX, PPTX — up to 200MB each',
+  news: 'PDF, JPG, PNG — up to 20MB each',
+};

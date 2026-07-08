@@ -50,8 +50,9 @@ export class NotificationService {
   static async list(
     userId: string,
     pagination: PaginationParams,
+    unreadOnly = false,
   ): Promise<{ data: unknown[]; meta: PaginationMeta; unreadCount: number }> {
-    const where = { userId };
+    const where = unreadOnly ? { userId, isRead: false } : { userId };
 
     const [total, unreadCount, notifications] = await Promise.all([
       prisma.notification.count({ where }),
@@ -88,5 +89,14 @@ export class NotificationService {
       where: { userId, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
+  }
+
+  static async delete(userId: string, notificationId: string): Promise<void> {
+    const notification = await prisma.notification.findUnique({ where: { id: notificationId } });
+    if (!notification || notification.userId !== userId) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Notification not found.');
+    }
+
+    await prisma.notification.delete({ where: { id: notificationId } });
   }
 }

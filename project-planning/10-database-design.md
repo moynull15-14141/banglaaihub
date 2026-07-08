@@ -9,7 +9,10 @@
 ## Design Principles
 
 1. **Universal Resource Schema** — সব resource type (dataset, paper, tool, tutorial) একটি common base থেকে extend করবে
-2. **Soft Delete** — কোনো data hard delete হবে না, `deleted_at` timestamp ব্যবহার করবো
+2. **Soft Delete (mostly)** — `deleted_at` timestamp is the default for anything that was ever public. As of
+   Phase 2.3, a `pending`/`rejected` resource (never approved, never public) is hard-deleted immediately
+   instead — nothing worth a moderation trail for. An `approved` resource is still always soft-deleted;
+   an admin (`resource:delete_any`) can force a hard delete on any resource regardless of status.
 3. **Audit Log** — সব গুরুত্বপূর্ণ action log হবে
 4. **RBAC** — Role Based Access Control for all permissions
 5. **Slug-based URLs** — SEO-friendly URLs (`/datasets/bangla-sentiment-v1` not `?id=17`)
@@ -153,6 +156,7 @@ resources
 │                    -- public | unlisted | private
 ├── language         VARCHAR(10) DEFAULT 'bn'  -- ISO 639: bn, en, both
 ├── thumbnail_url    TEXT
+├── documentation_url TEXT                      -- optional PDF/MD/TXT doc, any resource type
 ├── external_url     TEXT                       -- GitHub, HuggingFace, etc.
 ├── license          VARCHAR(100)               -- MIT, CC-BY-4.0, etc.
 ├── view_count       INTEGER DEFAULT 0
@@ -221,6 +225,9 @@ tools
 ├── platform         VARCHAR(100)              -- Python, JavaScript, HuggingFace
 ├── demo_url         TEXT
 ├── install_command  TEXT
+├── file_url         TEXT                      -- packaged tool asset (zip/tar/gz), R2 key
+├── file_size_bytes  BIGINT
+├── checksum_sha256  VARCHAR(64)
 ├── created_at       TIMESTAMPTZ DEFAULT NOW()
 └── updated_at       TIMESTAMPTZ DEFAULT NOW()
 ```
@@ -459,6 +466,48 @@ on read from the existing `resources`/`reputation_events`/`users` tables — no 
 metrics table exists. Metrics with no automated backing yet (contribution quality score,
 documentation/metadata quality, license compliance) are returned as explicit placeholders,
 not stored or faked.
+
+---
+
+### 22. `resource_files`
+
+Added for Phase 2.3 (Resource Management & File Experience) — universal multi-file
+attachments for every resource type, additive on top of the single-slot fields above
+(`datasets.file_url`, `papers.pdf_url`, `tools.file_url`, `resources.thumbnail_url`/
+`documentation_url`), which are unchanged and still work exactly as before. Tutorial/
+prompt/project/news resources, which have no single-slot file field at all, get 100% of
+their file support through this table.
+
+```sql
+resource_files
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── resource_id      UUID REFERENCES resources(id) ON DELETE CASCADE
+├── storage_key      TEXT NOT NULL              -- R2 object key, never exposed to clients
+├── display_name     VARCHAR(255) NOT NULL      -- editable label; defaults to filename
+├── filename         VARCHAR(255) NOT NULL      -- original uploaded filename
+├── mime_type        VARCHAR(150) NOT NULL
+├── extension        VARCHAR(20) NOT NULL
+├── size_bytes       BIGINT NOT NULL
+├── checksum_sha256  VARCHAR(64) NOT NULL
+├── sort_order       INTEGER DEFAULT 0
+├── uploaded_by       UUID REFERENCES users(id) ON DELETE SET NULL
+└── uploaded_at        TIMESTAMPTZ DEFAULT NOW()
+```
+
+Allowed extensions and max size are enforced per resource `type`, not globally:
+
+| Type | Extensions | Max size |
+|------|-----------|----------|
+| dataset | csv, json, parquet, zip, tar, gz | 500MB |
+| paper | pdf | 50MB |
+| tool | zip, 7z, tar, gz | 200MB |
+| tutorial | pdf, docx, pptx, zip, md | 100MB |
+| prompt | txt, json, md, pdf | 10MB |
+| project | zip, pdf, docx, pptx | 200MB |
+| news | pdf, jpg, jpeg, png | 20MB |
+
+Deleting a resource deletes its `resource_files` rows (`ON DELETE CASCADE`) and their R2
+objects; deleting a single attachment removes both the row and the R2 object immediately.
 
 ---
 

@@ -1,4 +1,4 @@
-import { Eye, Flag, MoreHorizontal, Star, StarOff, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Eye, Flag, MoreHorizontal, RotateCcw, Star, StarOff, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -32,6 +32,7 @@ export interface ModerationRowActions {
   onReject: (resource: Resource) => void;
   onFeature: (resource: Resource) => void;
   onUnfeature: (resource: Resource) => void;
+  onRestore: (resource: Resource) => void;
 }
 
 function RowActionsMenu({
@@ -41,7 +42,32 @@ function RowActionsMenu({
   onReject,
   onFeature,
   onUnfeature,
+  onRestore,
 }: ModerationRowActions & { resource: Resource }) {
+  // A soft-deleted resource can only be restored — approve/reject/feature
+  // all act on a live resource and don't apply until it's back.
+  if (resource.deleted_at) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${resource.title}`}>
+            <MoreHorizontal className="size-4" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => onView(resource)}>
+            <Eye className="size-4" aria-hidden="true" />
+            View details
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onRestore(resource)}>
+            <RotateCcw className="size-4" aria-hidden="true" />
+            Restore
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -200,7 +226,11 @@ export function ModerationTable({
                   {resource.category?.name ?? '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <StatusBadge status={resource.status} />
+                  {resource.deleted_at ? (
+                    <Badge variant="destructive">Deleted</Badge>
+                  ) : (
+                    <StatusBadge status={resource.status} />
+                  )}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                   {formatDate(resource.created_at)}
@@ -231,7 +261,11 @@ export function ModerationTable({
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <Badge variant="outline">{TYPE_LABELS[resource.type] ?? resource.type}</Badge>
-                <StatusBadge status={resource.status} />
+                {resource.deleted_at ? (
+                  <Badge variant="destructive">Deleted</Badge>
+                ) : (
+                  <StatusBadge status={resource.status} />
+                )}
                 {resource.featured ? <Badge variant="brand">Featured</Badge> : null}
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">

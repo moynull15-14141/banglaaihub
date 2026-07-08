@@ -9,13 +9,14 @@ import { SortDropdown } from '@/components/resource/SortDropdown';
 import { useCategories } from '@/lib/hooks/useCategories';
 import type { ResourceSort, ResourceType } from '@/types/resource';
 
-export type ModerationTab = 'pending' | 'approved' | 'rejected' | 'featured';
+export type ModerationTab = 'pending' | 'approved' | 'rejected' | 'featured' | 'deleted';
 
 const TABS: { value: ModerationTab; label: string }[] = [
   { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
   { value: 'featured', label: 'Featured' },
+  { value: 'deleted', label: 'Deleted' },
 ];
 
 const RESOURCE_TYPES: { value: ResourceType; label: string }[] = [

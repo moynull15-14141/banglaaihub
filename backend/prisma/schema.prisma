@@ -237,6 +237,7 @@ model User {
   passwordHistory                 PasswordHistory[]
   contributorApplications         ContributorApplication[] @relation("ContributorApplicant")
   contributorApplicationsReviewed ContributorApplication[] @relation("ContributorApplicationReviewer")
+  uploadedResourceFiles           ResourceFile[]
 
   @@index([deletedAt], map: "idx_users_deleted")
   @@map("users")
@@ -339,12 +340,39 @@ model Resource {
   reports          Report[]
   analytics        ResourceAnalytics[]
   reputationEvents ReputationEvent[]
+  files            ResourceFile[]
 
   @@index([status], map: "idx_resources_status")
   @@index([type], map: "idx_resources_type")
   @@index([authorId], map: "idx_resources_author")
   @@index([deletedAt], map: "idx_resources_deleted")
   @@map("resources")
+}
+
+// Universal multi-file attachment store — additive, layered on top of the
+// pre-existing single-slot fields (Dataset.fileUrl/Paper.pdfUrl/Tool.fileUrl,
+// Resource.thumbnailUrl/documentationUrl), which are left untouched for
+// backward compatibility. Works for all 7 resource types, including
+// tutorial/prompt/project/news which have no single-slot file field at all.
+model ResourceFile {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId     String   @map("resource_id") @db.Uuid
+  storageKey     String   @map("storage_key")
+  displayName    String   @map("display_name") @db.VarChar(255)
+  filename       String   @db.VarChar(255)
+  mimeType       String   @map("mime_type") @db.VarChar(150)
+  extension      String   @db.VarChar(20)
+  sizeBytes      BigInt   @map("size_bytes")
+  checksumSha256 String   @map("checksum_sha256") @db.VarChar(64)
+  sortOrder      Int      @default(0) @map("sort_order")
+  uploadedBy     String?  @map("uploaded_by") @db.Uuid
+  uploadedAt     DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  uploader User?    @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([resourceId], map: "idx_resource_files_resource")
+  @@map("resource_files")
 }
 
 model Dataset {

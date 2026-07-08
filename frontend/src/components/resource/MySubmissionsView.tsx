@@ -67,6 +67,7 @@ export function MySubmissionsView() {
           emptyTitle="No submissions yet"
           emptyDescription="Resources you submit will show up here with their review status."
           showStatus
+          showOwnerActions
         />
         {data ? (
           <Pagination

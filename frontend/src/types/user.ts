@@ -11,15 +11,48 @@ export interface User {
   created_at: string;
 }
 
+// GET /users/me's full response — a strict superset of User (every User
+// field is present with the same type), so it's freely assignable wherever
+// a User is expected (e.g. authStore.setUser).
+export interface OwnProfile extends User {
+  bio: string | null;
+  institution: string | null;
+  location: string | null;
+  website_url: string | null;
+  github_url: string | null;
+  scholar_url: string | null;
+  kaggle_url: string | null;
+  huggingface_url: string | null;
+  linkedin_url: string | null;
+  orcid_id: string | null;
+  x_url: string | null;
+  is_verified: boolean;
+  email_verified: boolean;
+  last_login_at: string | null;
+}
+
+export interface UpdateProfileInput {
+  display_name?: string;
+  bio?: string;
+  institution?: string;
+  location?: string;
+  website_url?: string;
+  github_url?: string;
+  scholar_url?: string;
+  kaggle_url?: string;
+  huggingface_url?: string;
+  linkedin_url?: string;
+  orcid_id?: string;
+  x_url?: string;
+}
+
 export interface PublicProfileStats {
   total_resources: number;
   total_downloads: number;
   total_views: number;
 }
 
-// Mirrors UserService.getPublicProfile() exactly — deliberately does NOT
-// include website_url/github_url/scholar_url/location, which the backend
-// only exposes on the owner's own profile (GET /users/me).
+// Mirrors UserService.getPublicProfile() exactly.
 export interface PublicProfile {
   id: string;
   username: string;
@@ -27,6 +60,15 @@ export interface PublicProfile {
   avatar_url: string | null;
   bio: string | null;
   institution: string | null;
+  location: string | null;
+  website_url: string | null;
+  github_url: string | null;
+  scholar_url: string | null;
+  kaggle_url: string | null;
+  huggingface_url: string | null;
+  linkedin_url: string | null;
+  orcid_id: string | null;
+  x_url: string | null;
   reputation_score: number;
   is_verified: boolean;
   resources: Resource[];

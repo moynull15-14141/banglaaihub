@@ -3,16 +3,26 @@ import * as commentsController from '../controllers/comments.controller';
 import * as resourcesController from '../controllers/resources.controller';
 import { authenticate, authenticateOptional } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
-import { resourceUpload } from '../middleware/upload';
+import { createRateLimiter } from '../middleware/rateLimiter';
+import { resourceAttachmentUpload, resourceUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
 import {
+  addResourceAttachmentQuerySchema,
+  confirmDownloadQuerySchema,
   createCategorySchema,
+  createReportSchema,
   createResourceSchema,
+  deleteResourceQuerySchema,
+  getDownloadUrlQuerySchema,
   listResourcesQuerySchema,
+  reorderResourceAttachmentsSchema,
   updateCategorySchema,
   updateResourceSchema,
   uploadResourceFileQuerySchema,
 } from '../validators/resource.validator';
+
+// doc 13's rate-limiting table: 20/day/user for report filing.
+const reportLimiter = createRateLimiter({ windowMs: 24 * 60 * 60 * 1000, max: 20 });
 
 // Mounted at /resources
 const resourcesRouter = Router();
@@ -38,6 +48,7 @@ resourcesRouter.delete(
   '/:slug',
   authenticate,
   authorize('resource:delete_own'),
+  validate(deleteResourceQuerySchema, 'query'),
   resourcesController.remove,
 );
 resourcesRouter.post(
@@ -51,9 +62,44 @@ resourcesRouter.post(
 resourcesRouter.get(
   '/:slug/download',
   authenticateOptional,
+  validate(getDownloadUrlQuerySchema, 'query'),
   resourcesController.download,
 );
+resourcesRouter.post(
+  '/:slug/download/confirm',
+  authenticateOptional,
+  validate(confirmDownloadQuerySchema, 'query'),
+  resourcesController.confirmDownload,
+);
 resourcesRouter.post('/:slug/share', authenticateOptional, resourcesController.share);
+
+// Ownership vs. resource:edit_any is resolved inside the service (same
+// pattern as PUT /:slug above) — any authenticated user can hit these
+// routes, assertCanModify() inside each service method is what actually gates.
+resourcesRouter.post(
+  '/:slug/attachments',
+  authenticate,
+  validate(addResourceAttachmentQuerySchema, 'query'),
+  resourceAttachmentUpload.single('file'),
+  resourcesController.addAttachment,
+);
+resourcesRouter.delete(
+  '/:slug/attachments/:fileId',
+  authenticate,
+  resourcesController.deleteAttachment,
+);
+resourcesRouter.put(
+  '/:slug/attachments/:fileId',
+  authenticate,
+  resourceAttachmentUpload.single('file'),
+  resourcesController.replaceAttachment,
+);
+resourcesRouter.patch(
+  '/:slug/attachments/reorder',
+  authenticate,
+  validate(reorderResourceAttachmentsSchema),
+  resourcesController.reorderAttachments,
+);
 resourcesRouter.post(
   '/:slug/bookmark',
   authenticate,
@@ -66,7 +112,14 @@ resourcesRouter.delete(
   authorize('resource:bookmark'),
   resourcesController.removeBookmark,
 );
-resourcesRouter.post('/:slug/report', authenticate, resourcesController.report);
+resourcesRouter.post(
+  '/:slug/report',
+  authenticate,
+  authorize('resource:report'),
+  reportLimiter,
+  validate(createReportSchema),
+  resourcesController.report,
+);
 resourcesRouter.get('/:slug/comments', commentsController.list);
 resourcesRouter.post('/:slug/comments', authenticate, commentsController.create);
 

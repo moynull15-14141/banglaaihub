@@ -38,7 +38,7 @@ export default function ContributorApplicationPage() {
   const showForm = !application || application.status === 'needs_revision' || (canReapply && reapplying);
 
   return (
-    <PageContainer className="max-w-3xl">
+    <PageContainer className="max-w-[968px]">
       <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
         Become a Contributor
       </h1>

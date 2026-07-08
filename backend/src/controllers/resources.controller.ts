@@ -1,14 +1,21 @@
 import type { Request, Response } from 'express';
+import { ReportService } from '../services/report.service';
 import { ResourceService } from '../services/resources.service';
 import { UserService } from '../services/users.service';
 import { ApiError } from '../utils/ApiError';
-import { sendNotImplemented, sendSuccess } from '../utils/apiResponse';
+import { sendSuccess } from '../utils/apiResponse';
 import { parsePagination } from '../utils/pagination';
 import type { AccessTokenPayload } from '../utils/jwt';
 import type {
+  AddResourceAttachmentQuery,
+  ConfirmDownloadQuery,
   CreateCategoryInput,
+  CreateReportInput,
   CreateResourceInput,
+  DeleteResourceQuery,
+  GetDownloadUrlQuery,
   ListResourcesQuery,
+  ReorderResourceAttachmentsInput,
   UpdateCategoryInput,
   UpdateResourceInput,
   UploadResourceFileQuery,
@@ -65,7 +72,8 @@ export async function update(req: Request, res: Response): Promise<void> {
 
 export async function remove(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
-  await ResourceService.softDelete(requireParam(req, 'slug'), user);
+  const query = (req.validatedQuery ?? {}) as DeleteResourceQuery;
+  await ResourceService.deleteResource(requireParam(req, 'slug'), user, { force: query.force === 'true' });
   sendSuccess(res, { message: 'Resource deleted.' });
 }
 
@@ -81,13 +89,64 @@ export async function uploadFile(req: Request, res: Response): Promise<void> {
 }
 
 export async function download(req: Request, res: Response): Promise<void> {
-  const { url } = await ResourceService.getDownloadUrl(requireParam(req, 'slug'), req.user);
-  res.redirect(302, url);
+  const query = (req.validatedQuery ?? {}) as GetDownloadUrlQuery;
+  const result = await ResourceService.getDownloadUrl(requireParam(req, 'slug'), req.user, query.file_id);
+  sendSuccess(res, result);
+}
+
+export async function confirmDownload(req: Request, res: Response): Promise<void> {
+  const query = (req.validatedQuery ?? {}) as ConfirmDownloadQuery;
+  await ResourceService.confirmDownload(requireParam(req, 'slug'), req.user, query.file_id);
+  sendSuccess(res, { message: 'Download recorded.' });
 }
 
 export async function share(req: Request, res: Response): Promise<void> {
   await ResourceService.logShare(requireParam(req, 'slug'), req.user);
   sendSuccess(res, { message: 'Share recorded.' });
+}
+
+// --- Attachments (ResourceFile) ---------------------------------------------
+
+export async function addAttachment(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  if (!req.file) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'No file provided.');
+  }
+  const query = (req.validatedQuery ?? {}) as AddResourceAttachmentQuery;
+  const result = await ResourceService.addAttachment(
+    requireParam(req, 'slug'),
+    user,
+    req.file,
+    query.display_name,
+  );
+  sendSuccess(res, result, undefined, 201);
+}
+
+export async function deleteAttachment(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  await ResourceService.deleteAttachment(requireParam(req, 'slug'), user, requireParam(req, 'fileId'));
+  sendSuccess(res, { message: 'Attachment deleted.' });
+}
+
+export async function replaceAttachment(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  if (!req.file) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'No file provided.');
+  }
+  const result = await ResourceService.replaceAttachment(
+    requireParam(req, 'slug'),
+    user,
+    requireParam(req, 'fileId'),
+    req.file,
+  );
+  sendSuccess(res, result);
+}
+
+export async function reorderAttachments(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = req.validatedBody as ReorderResourceAttachmentsInput;
+  await ResourceService.reorderAttachments(requireParam(req, 'slug'), user, body);
+  sendSuccess(res, { message: 'Attachments reordered.' });
 }
 
 export async function addBookmark(req: Request, res: Response): Promise<void> {
@@ -104,8 +163,12 @@ export async function removeBookmark(req: Request, res: Response): Promise<void>
   sendSuccess(res, { message: 'Bookmark removed.' });
 }
 
-export function report(_req: Request, res: Response): void {
-  sendNotImplemented(res);
+export async function report(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = req.validatedBody as CreateReportInput;
+  const resourceId = await ResourceService.resolveIdBySlug(requireParam(req, 'slug'));
+  const result = await ReportService.create(user.userId, resourceId, body.reason, body.description);
+  sendSuccess(res, result, undefined, 201);
 }
 
 export async function listCategories(_req: Request, res: Response): Promise<void> {

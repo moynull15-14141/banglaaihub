@@ -44,7 +44,10 @@ export function Navbar() {
             </span>
             <span className="hidden sm:inline">Bangla AI Hub</span>
           </Link>
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Main navigation">
+        </div>
+
+        <div className="flex items-center gap-4">
+          <nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">
             {MAIN_NAV_LINKS.map((link) => {
               const active = isActive(pathname, link.href);
               return (
@@ -65,9 +68,6 @@ export function Navbar() {
               );
             })}
           </nav>
-        </div>
-
-        <div className="flex items-center gap-2">
           {isAuthenticated && user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

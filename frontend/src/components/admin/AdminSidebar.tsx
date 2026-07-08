@@ -7,7 +7,7 @@ import { ROUTES } from '@/lib/constants/routes';
 // mobile — see AdminTopbar.
 export function AdminSidebar() {
   return (
-    <aside className="hidden w-60 shrink-0 border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col">
+    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar lg:flex lg:flex-col">
       <Link
         href={ROUTES.admin}
         className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4 font-semibold tracking-tight text-sidebar-foreground"

@@ -1,6 +1,9 @@
 // Mirrors the routing table in project-planning/12-frontend-architecture.md,
 // plus the generic /resources routes added in Phase 9 for types that have no
-// dedicated route (tutorial/prompt/project/news).
+// dedicated route (tutorial/prompt/project/news). Phase 2.3 gave those 4
+// types their own listing pages too (browse-by-type + navbar entries) —
+// their individual items still resolve through /resources/[slug] (see
+// resourceHref below), only the listing URL is dedicated.
 export const ROUTES = {
   home: '/',
   resources: '/resources',
@@ -11,6 +14,10 @@ export const ROUTES = {
   paper: (slug: string) => `/papers/${slug}`,
   tools: '/tools',
   tool: (slug: string) => `/tools/${slug}`,
+  tutorials: '/tutorials',
+  prompts: '/prompts',
+  projects: '/projects',
+  news: '/news',
   search: '/search',
   userProfile: (username: string) => `/users/${username}`,
   category: (slug: string) => `/categories/${slug}`,
@@ -29,6 +36,7 @@ export const ROUTES = {
   settings: '/settings',
   settingsProfile: '/settings/profile',
   mySubmissions: '/my-submissions',
+  editResource: (slug: string) => `/my-submissions/${slug}/edit`,
   contributorApplication: '/contributor-application',
 
   admin: '/admin',

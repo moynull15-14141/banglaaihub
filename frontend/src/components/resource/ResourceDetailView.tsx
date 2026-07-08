@@ -1,32 +1,85 @@
 'use client';
 
+import { useState } from 'react';
 import { isAxiosError } from 'axios';
-import { notFound } from 'next/navigation';
-import { Bookmark, ExternalLink, FileText } from 'lucide-react';
+import { notFound, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Bookmark, BookmarkCheck, ExternalLink, FileText, Flag } from 'lucide-react';
 import { Breadcrumb } from '@/components/common/Breadcrumb';
 import { DetailSkeleton } from '@/components/common/LoadingSkeleton';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageContainer } from '@/components/common/PageContainer';
+import { AttachmentsSection } from '@/components/resource/AttachmentsSection';
+import { CitationBlock } from '@/components/resource/CitationBlock';
+import { MoreFromAuthorCard } from '@/components/resource/MoreFromAuthorCard';
+import { ReportResourceDialog } from '@/components/resource/ReportResourceDialog';
 import { ResourceMeta } from '@/components/resource/ResourceMeta';
 import { ResourceTypeMetadata } from '@/components/resource/ResourceTypeMetadata';
 import { ShareButtons } from '@/components/resource/ShareButtons';
+import { SimilarResourcesCard } from '@/components/resource/SimilarResourcesCard';
 import { TagBadge } from '@/components/resource/TagBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserCard } from '@/components/user/UserCard';
 import { ResourceJsonLd } from '@/components/seo/JsonLd';
-import { useResource } from '@/lib/hooks/useResources';
+import { useAuth } from '@/lib/hooks/useAuth';
+import { useReportResource, useResource, useToggleResourceBookmark } from '@/lib/hooks/useResources';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
 import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
 import { formatDate } from '@/lib/utils/format';
+import type { ReportReason } from '@/lib/api/resources';
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (isAxiosError(error) && typeof error.response?.data?.error?.message === 'string') {
+    return error.response.data.error.message;
+  }
+  return fallback;
+}
 
 interface ResourceDetailViewProps {
   slug: string;
 }
 
 export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
+  const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const { data: resource, isLoading, isError, error, refetch } = useResource(slug);
+  const toggleBookmarkMutation = useToggleResourceBookmark(slug);
+  const reportMutation = useReportResource(slug);
+  const [reportOpen, setReportOpen] = useState(false);
+
+  function handleBookmarkClick() {
+    if (!isAuthenticated) {
+      router.push(ROUTES.login);
+      return;
+    }
+    if (!resource) return;
+    toggleBookmarkMutation.mutate(
+      { add: !resource.is_bookmarked },
+      {
+        onSuccess: () => toast.success(resource.is_bookmarked ? 'Bookmark removed.' : 'Bookmark added.'),
+        onError: (error) => toast.error(errorMessage(error, 'Could not update your bookmark.')),
+      },
+    );
+  }
+
+  function handleReportClick() {
+    if (!isAuthenticated) {
+      router.push(ROUTES.login);
+      return;
+    }
+    setReportOpen(true);
+  }
+
+  function handleReportConfirm(input: { reason: ReportReason; description?: string }) {
+    reportMutation.mutate(input, {
+      onSuccess: () => {
+        toast.success('Report submitted — a moderator will review it.');
+        setReportOpen(false);
+      },
+      onError: (error) => toast.error(errorMessage(error, 'Could not submit your report.')),
+    });
+  }
 
   if (isLoading) {
     return (
@@ -85,17 +138,19 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex" tabIndex={0}>
-                <Button variant="outline" disabled>
-                  <Bookmark className="size-4" aria-hidden="true" />
-                  Bookmark
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Bookmarking is coming soon</TooltipContent>
-          </Tooltip>
+          <Button
+            type="button"
+            variant={resource.is_bookmarked ? 'secondary' : 'outline'}
+            disabled={toggleBookmarkMutation.isPending}
+            onClick={handleBookmarkClick}
+          >
+            {resource.is_bookmarked ? (
+              <BookmarkCheck className="size-4" aria-hidden="true" />
+            ) : (
+              <Bookmark className="size-4" aria-hidden="true" />
+            )}
+            {resource.is_bookmarked ? 'Bookmarked' : 'Bookmark'}
+          </Button>
           {resource.external_url ? (
             <Button asChild variant="outline">
               <a href={resource.external_url} target="_blank" rel="noopener noreferrer">
@@ -112,6 +167,10 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
               </a>
             </Button>
           ) : null}
+          <Button type="button" variant="ghost" onClick={handleReportClick}>
+            <Flag className="size-4" aria-hidden="true" />
+            Report
+          </Button>
         </div>
         <ShareButtons
           slug={resource.slug}
@@ -134,6 +193,16 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
 
       <ResourceTypeMetadata resource={resource} />
 
+      <AttachmentsSection slug={resource.slug} attachments={resource.attachments} />
+
+      <CitationBlock
+        title={resource.title}
+        authorName={authorName}
+        publishedAt={resource.published_at}
+        license={resource.license}
+        url={`${process.env.NEXT_PUBLIC_APP_URL ?? ''}${resourceHref(resource.type, resource.slug)}`}
+      />
+
       {authorName && resource.author ? (
         <div className="space-y-2">
           <h2 className="text-sm font-medium text-muted-foreground">Submitted by</h2>
@@ -144,6 +213,28 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
           />
         </div>
       ) : null}
+
+      <SimilarResourcesCard
+        type={resource.type}
+        categorySlug={resource.category?.slug}
+        excludeSlug={resource.slug}
+      />
+
+      {resource.author && authorName ? (
+        <MoreFromAuthorCard
+          username={resource.author.username}
+          authorName={authorName}
+          excludeSlug={resource.slug}
+        />
+      ) : null}
+
+      <ReportResourceDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        resourceTitle={resource.title}
+        isPending={reportMutation.isPending}
+        onConfirm={handleReportConfirm}
+      />
     </PageContainer>
   );
 }

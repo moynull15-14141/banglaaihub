@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { isAxiosError } from 'axios';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileUp, Info, Loader2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,11 +18,19 @@ import { ResourceTypeFields } from '@/components/resource/ResourceTypeFields';
 import { FileDropzone } from '@/components/resource/FileDropzone';
 import { ThumbnailUrlInput } from '@/components/resource/ThumbnailUrlInput';
 import { SubmitStepIndicator, type SubmitStep } from '@/components/resource/SubmitStepIndicator';
+import { getFileIcon } from '@/lib/utils/fileIcons';
+import { formatBytes } from '@/lib/utils/format';
 import { useCategories } from '@/lib/hooks/useCategories';
-import { useCreateResource, useUploadResourceFile } from '@/lib/hooks/useResources';
+import { useAddResourceAttachment, useCreateResource, useUploadResourceFile } from '@/lib/hooks/useResources';
 import { useAutosaveDraft, readDraft, clearDraft } from '@/lib/hooks/useAutosaveDraft';
 import { ROUTES } from '@/lib/constants/routes';
-import { RESOURCE_TYPE_LABELS, RESOURCE_TYPE_OPTIONS, LANGUAGE_OPTIONS } from '@/lib/constants/resourceTypes';
+import {
+  RESOURCE_ATTACHMENT_ACCEPT_BY_TYPE,
+  RESOURCE_ATTACHMENT_HINT_BY_TYPE,
+  RESOURCE_TYPE_LABELS,
+  RESOURCE_TYPE_OPTIONS,
+  LANGUAGE_OPTIONS,
+} from '@/lib/constants/resourceTypes';
 import type {
   CreateResourceInput,
   CreateResourceResult,
@@ -32,6 +40,15 @@ import type {
   ResourceType,
   ToolInput,
 } from '@/types/resource';
+
+type AttachmentStatus = 'pending' | 'uploading' | 'done' | 'error';
+
+interface QueuedAttachment {
+  id: string;
+  file: File;
+  status: AttachmentStatus;
+  error?: string;
+}
 
 // Dataset file uploads reuse the existing StorageService allow-list
 // (backend/src/services/storage.service.ts's DATASET_ALLOWED_EXTENSIONS) —
@@ -85,12 +102,18 @@ export function SubmitResourceView() {
   const uploadMutation = useUploadResourceFile();
 
   const thumbnailUploadMutation = useUploadResourceFile();
+  const addAttachmentMutation = useAddResourceAttachment();
 
   const [step, setStep] = useState<Step>('form');
   const [form, setForm] = useState<CreateResourceInput>(emptyForm);
   const [tagsText, setTagsText] = useState('');
   const [datasetFile, setDatasetFile] = useState<File | null>(null);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  // Universal multi-file attachments (Part 1/2) — available for every
+  // resource type, separate from the dataset-only single-file field above.
+  // Files are only actually uploaded once the resource exists (has a slug),
+  // same deferred pattern as datasetFile/thumbnailFile.
+  const [queuedAttachments, setQueuedAttachments] = useState<QueuedAttachment[]>([]);
   const [result, setResult] = useState<CreateResourceResult | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState<number | null>(null);
@@ -101,6 +124,7 @@ export function SubmitResourceView() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentsInputRef = useRef<HTMLInputElement>(null);
 
   // Restore an unsaved draft left over from a page refresh/close — browser
   // storage only, cleared automatically on successful submission.
@@ -132,6 +156,65 @@ export function SubmitResourceView() {
   function handleTypeChange(nextType: ResourceType) {
     setForm((prev) => ({ ...prev, type: nextType }));
     if (nextType !== 'dataset') setDatasetFile(null);
+    // Allowed extensions differ per type — clear the queue rather than risk
+    // silently carrying over a file the new type's server-side validation
+    // will reject anyway.
+    setQueuedAttachments([]);
+  }
+
+  // The <input accept=""> attribute is only a hint for the native file
+  // picker — drag-and-drop, and some pickers' "All files" fallback, bypass
+  // it entirely. Re-check here so a disallowed file (e.g. .bat, .exe — the
+  // server rejects every executable/script extension regardless of resource
+  // type) is caught instantly with a clear reason, instead of silently
+  // queuing something that will always fail the upload later.
+  function addQueuedAttachments(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const allowed = RESOURCE_ATTACHMENT_ACCEPT_BY_TYPE[form.type].split(',');
+
+    const accepted: QueuedAttachment[] = [];
+    for (const file of Array.from(files)) {
+      const extension = `.${file.name.split('.').pop()?.toLowerCase() ?? ''}`;
+      if (!allowed.includes(extension)) {
+        toast.error(
+          `"${file.name}" isn't an allowed file type for ${RESOURCE_TYPE_LABELS[form.type].toLowerCase()} attachments (${RESOURCE_ATTACHMENT_HINT_BY_TYPE[form.type]}).`,
+        );
+        continue;
+      }
+      accepted.push({ id: `${file.name}-${file.size}-${file.lastModified}`, file, status: 'pending' });
+    }
+
+    setQueuedAttachments((prev) => [...prev, ...accepted.filter((f) => !prev.some((p) => p.id === f.id))]);
+  }
+
+  function removeQueuedAttachment(id: string) {
+    setQueuedAttachments((prev) => prev.filter((attachment) => attachment.id !== id));
+  }
+
+  // Uploaded sequentially (not Promise.all) so QueuedAttachment status
+  // updates stay readable one file at a time instead of racing. Skips
+  // already-'done' files so the success step's per-file Retry button only
+  // re-uploads the ones that actually failed.
+  async function runAttachmentUploads(slug: string) {
+    for (const attachment of queuedAttachments.filter((item) => item.status !== 'done')) {
+      setQueuedAttachments((prev) =>
+        prev.map((item) => (item.id === attachment.id ? { ...item, status: 'uploading' } : item)),
+      );
+      try {
+        await addAttachmentMutation.mutateAsync({ slug, file: attachment.file });
+        setQueuedAttachments((prev) =>
+          prev.map((item) => (item.id === attachment.id ? { ...item, status: 'done' } : item)),
+        );
+      } catch (error) {
+        setQueuedAttachments((prev) =>
+          prev.map((item) =>
+            item.id === attachment.id
+              ? { ...item, status: 'error', error: errorMessage(error, 'Upload failed.') }
+              : item,
+          ),
+        );
+      }
+    }
   }
 
   function discardDraft() {
@@ -249,6 +332,9 @@ export function SubmitResourceView() {
         if (thumbnailFile) {
           runThumbnailUpload(created.slug);
         }
+        if (queuedAttachments.length > 0) {
+          void runAttachmentUploads(created.slug);
+        }
       },
       onError: (error) => {
         toast.error(errorMessage(error, 'Could not submit your resource. Please check the form and try again.'));
@@ -276,6 +362,7 @@ export function SubmitResourceView() {
     setTagsText('');
     setDatasetFile(null);
     setThumbnailFile(null);
+    setQueuedAttachments([]);
     setResult(null);
     setUploadProgress(0);
     setUploadSpeed(null);
@@ -305,7 +392,7 @@ export function SubmitResourceView() {
 
   if (step === 'success' && result) {
     return (
-      <PageContainer className="max-w-2xl">
+      <PageContainer className="max-w-[968px]">
         <SubmitStepIndicator steps={STEPS} currentIndex={stepIndex} />
         <Card>
           <CardHeader className="items-center text-center">
@@ -363,6 +450,48 @@ export function SubmitResourceView() {
               </div>
             ) : null}
 
+            {queuedAttachments.length > 0 ? (
+              <div className="space-y-2 text-left">
+                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Attachments</p>
+                {queuedAttachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border/60 p-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm">{attachment.file.name}</p>
+                      {attachment.status === 'error' ? (
+                        <p className="truncate text-xs text-destructive">{attachment.error}</p>
+                      ) : null}
+                    </div>
+                    {attachment.status === 'uploading' ? (
+                      <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+                    ) : attachment.status === 'done' ? (
+                      <CheckCircle2 className="size-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                    ) : attachment.status === 'error' ? (
+                      // Retrying re-sends the exact same file — pointless for a
+                      // permanent rejection (bad file type/content), only
+                      // offered when the failure looks transient (a network/
+                      // storage error, not our own VALIDATION_ERROR wording).
+                      !attachment.error?.toLowerCase().includes('not allowed') &&
+                      !attachment.error?.toLowerCase().includes('does not match') ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => result && void runAttachmentUploads(result.slug)}
+                        >
+                          Retry
+                        </Button>
+                      ) : null
+                    ) : (
+                      <span className="shrink-0 text-xs text-muted-foreground">Queued</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <Alert>
               <Info />
               <AlertTitle>What happens next</AlertTitle>
@@ -389,7 +518,7 @@ export function SubmitResourceView() {
 
   if (step === 'review') {
     return (
-      <PageContainer className="max-w-2xl">
+      <PageContainer className="max-w-[968px]">
         <SubmitStepIndicator steps={STEPS} currentIndex={stepIndex} onStepClick={() => setStep('form')} />
         <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">Review your submission</h1>
         <p className="mt-1 text-muted-foreground">
@@ -446,6 +575,17 @@ export function SubmitResourceView() {
               </div>
             ) : null}
 
+            {queuedAttachments.length > 0 ? (
+              <div>
+                <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  Attachments
+                </p>
+                <p className="text-sm">
+                  {queuedAttachments.length} file{queuedAttachments.length === 1 ? '' : 's'} queued to upload
+                </p>
+              </div>
+            ) : null}
+
             {form.type === 'paper' && (form.paper?.venue || form.paper?.year || form.paper?.doi) ? (
               <div>
                 <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Paper details</p>
@@ -479,7 +619,7 @@ export function SubmitResourceView() {
   }
 
   return (
-    <PageContainer className="max-w-2xl">
+    <PageContainer className="max-w-[968px]">
       <SubmitStepIndicator steps={STEPS} currentIndex={stepIndex} />
       <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">Submit a resource</h1>
       <p className="mt-1 text-muted-foreground">
@@ -712,6 +852,77 @@ export function SubmitResourceView() {
             </CardContent>
           </Card>
         ) : null}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Attachments</CardTitle>
+            <CardDescription>
+              Add any downloadable files for this {RESOURCE_TYPE_LABELS[form.type].toLowerCase()} — optional here,
+              you can also add, replace, or remove them later from My Submissions.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div>
+              <input
+                ref={attachmentsInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                accept={RESOURCE_ATTACHMENT_ACCEPT_BY_TYPE[form.type]}
+                onChange={(event) => {
+                  addQueuedAttachments(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => attachmentsInputRef.current?.click()}
+              >
+                <FileUp className="size-4" aria-hidden="true" />
+                Add files
+              </Button>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {RESOURCE_ATTACHMENT_HINT_BY_TYPE[form.type]}
+              </p>
+            </div>
+
+            {queuedAttachments.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {queuedAttachments.map((attachment) => {
+                  const Icon = getFileIcon(`.${attachment.file.name.split('.').pop() ?? ''}`);
+                  return (
+                    <div
+                      key={attachment.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border/60 p-2.5"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm">{attachment.file.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatBytes(attachment.file.size)}
+                            {attachment.status === 'error' ? ` · ${attachment.error}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => removeQueuedAttachment(attachment.id)}
+                        aria-label="Remove"
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
         {hasAttemptedContinue && !isFormValid ? (
           <Alert variant="destructive" role="alert">

@@ -13,6 +13,11 @@ interface ResourceGridProps {
   emptyTitle?: string;
   emptyDescription?: string;
   showStatus?: boolean;
+  // My Submissions only — adds Edit/Delete actions and a visibility/updated
+  // footer that would be noise on every public listing page.
+  showOwnerActions?: boolean;
+  // Bookmarks page only — adds a one-click "Remove" action.
+  showBookmarkAction?: boolean;
 }
 
 export function ResourceGrid({
@@ -23,6 +28,8 @@ export function ResourceGrid({
   emptyTitle,
   emptyDescription,
   showStatus = false,
+  showOwnerActions = false,
+  showBookmarkAction = false,
 }: ResourceGridProps) {
   if (isLoading) {
     return <CardGridSkeleton />;
@@ -45,7 +52,13 @@ export function ResourceGrid({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {resources.map((resource) => (
-        <ResourceCard key={resource.id} resource={resource} showStatus={showStatus} />
+        <ResourceCard
+          key={resource.id}
+          resource={resource}
+          showStatus={showStatus}
+          showOwnerActions={showOwnerActions}
+          showBookmarkAction={showBookmarkAction}
+        />
       ))}
     </div>
   );

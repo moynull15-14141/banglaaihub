@@ -57,7 +57,8 @@ export async function uploadAvatar(req: Request, res: Response): Promise<void> {
 export async function getMyBookmarks(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
   const pagination = parsePagination(req.query as Record<string, string>);
-  const result = await UserService.listBookmarks(user.userId, pagination);
+  const sort = typeof req.query.sort === 'string' ? req.query.sort : undefined;
+  const result = await UserService.listBookmarks(user.userId, pagination, sort);
   sendSuccess(res, result.data, result.meta);
 }
 

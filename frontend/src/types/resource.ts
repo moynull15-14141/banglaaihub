@@ -9,8 +9,26 @@ export type ResourceType =
 
 export type ResourceLanguage = 'bn' | 'en' | 'both';
 export type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
+export type ResourceVisibility = 'public' | 'unlisted' | 'private';
 export type ResourceSort = 'newest' | 'oldest' | 'popular' | 'downloads' | 'bookmarks';
 export type ToolType = 'library' | 'api' | 'model' | 'prompt' | 'tutorial';
+
+// A ResourceFile row (Phase 2.3) — a universal, multi-file attachment,
+// separate from (and additional to) each type's single-slot field
+// (dataset.file_url/paper.pdf_url/tool.file_url).
+export interface ResourceAttachment {
+  id: string;
+  filename: string;
+  display_name: string;
+  mime_type: string;
+  extension: string;
+  size_bytes: string;
+  checksum_sha256: string;
+  sort_order: number;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  url: string;
+}
 
 export interface ResourceAuthor {
   id: string;
@@ -75,12 +93,14 @@ export interface Resource {
   description: string | null;
   type: ResourceType;
   status: ResourceStatus;
-  visibility: string;
+  visibility: ResourceVisibility;
   language: ResourceLanguage;
   license: string | null;
   external_url: string | null;
   thumbnail_url: string | null;
   documentation_url: string | null;
+  attachments: ResourceAttachment[];
+  attachment_count: number;
   author: ResourceAuthor | null;
   category: ResourceCategory | null;
   tags: string[];
@@ -93,6 +113,16 @@ export interface Resource {
   published_at: string | null;
   created_at: string;
   updated_at: string;
+  // Only ever non-null when fetched via the admin "Deleted" moderation tab —
+  // every other list/detail endpoint filters deletedAt out server-side.
+  deleted_at: string | null;
+  // Only ever present when fetched via GET /resources/:slug (for the
+  // authenticated requester) or GET /users/me/bookmarks (always true there)
+  // — omitted (undefined) from plain listing endpoints, not computed there.
+  is_bookmarked?: boolean;
+  // Only present on GET /users/me/bookmarks — when the bookmark itself was
+  // created, not the resource.
+  bookmarked_at?: string;
   dataset: DatasetMetadata | null;
   paper: PaperMetadata | null;
   tool: ToolMetadata | null;
@@ -144,10 +174,16 @@ export interface CreateResourceInput {
   license?: string;
   external_url?: string;
   thumbnail_url?: string;
+  visibility?: ResourceVisibility;
   dataset?: DatasetInput;
   paper?: PaperInput;
   tool?: ToolInput;
 }
+
+// Mirrors backend/src/validators/resource.validator.ts's updateResourceSchema
+// (createResourceSchema.partial()) — every field optional, `type` included
+// but never actually sent (a resource's type can't change after creation).
+export type UpdateResourceInput = Partial<CreateResourceInput>;
 
 // Mirrors backend/src/services/resources.service.ts's UploadKind.
 export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation';
@@ -169,6 +205,9 @@ export interface ListResourcesParams {
   status?: ResourceStatus;
   sort?: ResourceSort;
   featured?: true;
+  // Admin-only — see ResourceService.list()'s backend comment. Silently
+  // ignored (falls back to live resources) for anyone without resource:delete_any.
+  deleted?: true;
   page?: number;
   limit?: number;
 }

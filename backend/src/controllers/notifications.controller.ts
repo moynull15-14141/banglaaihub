@@ -23,7 +23,8 @@ function requireParam(req: Request, name: string): string {
 export async function list(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
   const pagination = parsePagination(req.query as Record<string, string>);
-  const result = await NotificationService.list(user.userId, pagination);
+  const unreadOnly = req.query.unread === 'true';
+  const result = await NotificationService.list(user.userId, pagination, unreadOnly);
   sendSuccess(res, result.data, { ...result.meta, unread_count: result.unreadCount });
 }
 
@@ -37,4 +38,10 @@ export async function markAllRead(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
   await NotificationService.markAllRead(user.userId);
   sendSuccess(res, { message: 'All notifications marked as read.' });
+}
+
+export async function remove(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  await NotificationService.delete(user.userId, requireParam(req, 'id'));
+  sendSuccess(res, { message: 'Notification deleted.' });
 }

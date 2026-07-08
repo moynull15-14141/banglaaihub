@@ -28,6 +28,7 @@ const PERMISSIONS: Record<string, string> = {
   'resource:create': 'Submit a resource',
   'resource:upload': 'Upload dataset files',
   'resource:edit_any': 'Edit any resource',
+  'resource:delete_any': 'Delete or hard-delete any resource',
   'comment:delete_any': 'Delete any comment',
   'resource:approve': 'Approve or reject resource submissions',
   'resource:feature': 'Feature or unfeature a resource',
@@ -71,7 +72,16 @@ const ROLE_PERMISSIONS: Record<(typeof ROLES)[number], string[]> = {
     'report:reject',
     'contributor_application:review',
   ],
-  admin: ['user:manage', 'user:ban', 'user:role_change', 'system:audit_log_view'],
+  // resource:delete_any (including hard-delete of pending/rejected resources)
+  // sits at admin, one tier above resource:edit_any (moderator) — deleting is
+  // more destructive/harder to reverse than editing, so it gets the stricter gate.
+  admin: [
+    'user:manage',
+    'user:ban',
+    'user:role_change',
+    'system:audit_log_view',
+    'resource:delete_any',
+  ],
   super_admin: ['admin:manage', 'system:configure'],
 };
 

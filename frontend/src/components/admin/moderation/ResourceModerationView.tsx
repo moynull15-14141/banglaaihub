@@ -18,13 +18,14 @@ import {
   useApproveResource,
   useFeatureResource,
   useRejectResource,
+  useRestoreResource,
   useUnfeatureResource,
 } from '@/lib/hooks/useAdmin';
 import type { ListResourcesParams, Resource } from '@/types/resource';
 
 const PAGE_SIZE = 20;
 
-function paramsForTab(tab: ModerationTab): Pick<ListResourcesParams, 'status' | 'featured'> {
+function paramsForTab(tab: ModerationTab): Pick<ListResourcesParams, 'status' | 'featured' | 'deleted'> {
   switch (tab) {
     case 'approved':
       return { status: 'approved' };
@@ -32,6 +33,8 @@ function paramsForTab(tab: ModerationTab): Pick<ListResourcesParams, 'status' | 
       return { status: 'rejected' };
     case 'featured':
       return { status: 'approved', featured: true };
+    case 'deleted':
+      return { deleted: true };
     default:
       return { status: 'pending' };
   }
@@ -100,11 +103,13 @@ export function ResourceModerationView() {
   const [rejectTarget, setRejectTarget] = useState<Resource | null>(null);
   const [featureTarget, setFeatureTarget] = useState<Resource | null>(null);
   const [unfeatureTarget, setUnfeatureTarget] = useState<Resource | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<Resource | null>(null);
 
   const approveMutation = useApproveResource();
   const rejectMutation = useRejectResource();
   const featureMutation = useFeatureResource();
   const unfeatureMutation = useUnfeatureResource();
+  const restoreMutation = useRestoreResource();
 
   return (
     <PageContainer>
@@ -139,6 +144,7 @@ export function ResourceModerationView() {
           onReject={setRejectTarget}
           onFeature={setFeatureTarget}
           onUnfeature={setUnfeatureTarget}
+          onRestore={setRestoreTarget}
         />
 
         {data ? (
@@ -241,6 +247,27 @@ export function ResourceModerationView() {
               setUnfeatureTarget(null);
             },
             onError: () => toast.error('Could not update this resource. Please try again.'),
+          });
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={restoreTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRestoreTarget(null);
+        }}
+        title={`Restore "${restoreTarget?.title ?? ''}"?`}
+        description="This resource will become publicly visible again, exactly as it was before it was deleted."
+        confirmLabel="Restore"
+        isPending={restoreMutation.isPending}
+        onConfirm={() => {
+          if (!restoreTarget) return;
+          restoreMutation.mutate(restoreTarget.id, {
+            onSuccess: () => {
+              toast.success('Resource restored.');
+              setRestoreTarget(null);
+            },
+            onError: () => toast.error('Could not restore this resource. Please try again.'),
           });
         }}
       />

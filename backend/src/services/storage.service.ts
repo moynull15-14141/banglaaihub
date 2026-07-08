@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { r2BucketName, r2Client, r2PublicUrl } from '../config/r2';
+import { logger } from '../config/logger';
 import { ApiError } from '../utils/ApiError';
 
 const DOWNLOAD_URL_EXPIRY_SECONDS = 60 * 60;
@@ -41,6 +42,7 @@ export const STORAGE_FOLDERS = {
   documents: 'documents',
   sampleFiles: 'sample-files',
   thumbnails: 'thumbnails',
+  attachments: 'attachments',
   temp: 'temp',
 } as const;
 
@@ -79,6 +81,11 @@ const EXTENSION_CATALOG: Record<string, ExtensionSpec> = {
   '.zip': { mimeTypes: ['application/zip', 'application/x-zip-compressed'], sniffable: true },
   '.tar': { mimeTypes: ['application/x-tar'], sniffable: true },
   '.gz': { mimeTypes: ['application/gzip', 'application/x-gzip'], sniffable: true },
+  '.7z': { mimeTypes: ['application/x-7z-compressed'], sniffable: true },
+  '.pptx': {
+    mimeTypes: ['application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+    sniffable: true,
+  },
   '.csv': { mimeTypes: ['text/csv', 'text/plain', 'application/vnd.ms-excel'], sniffable: false },
   '.json': { mimeTypes: ['application/json', 'text/plain'], sniffable: false },
   '.parquet': { mimeTypes: ['application/octet-stream', 'application/vnd.apache.parquet'], sniffable: false },
@@ -149,6 +156,40 @@ export const TOOL_ASSET_MAX_FILE_SIZE = 200 * 1024 * 1024;
 // (no .docx) per doc 2.2 Part 4's explicit PDF/Markdown/TXT list.
 export const DOCUMENTATION_ALLOWED_EXTENSIONS = ['.pdf', '.md', '.txt'];
 export const DOCUMENTATION_MAX_FILE_SIZE = 50 * 1024 * 1024;
+
+// Universal multi-file attachments (ResourceFile) — one allow-list + size cap
+// per resource type, per Phase 2.3 Part 1's table. Deliberately separate from
+// the single-slot lists above (DATASET_ALLOWED_EXTENSIONS etc.), which keep
+// governing the pre-existing single-file upload flow unchanged.
+export const RESOURCE_ATTACHMENT_EXTENSIONS_BY_TYPE: Record<string, string[]> = {
+  dataset: ['.csv', '.json', '.parquet', '.zip', '.tar', '.gz'],
+  paper: ['.pdf'],
+  tool: ['.zip', '.7z', '.tar', '.gz'],
+  tutorial: ['.pdf', '.docx', '.pptx', '.zip', '.md'],
+  prompt: ['.txt', '.json', '.md', '.pdf'],
+  project: ['.zip', '.pdf', '.docx', '.pptx'],
+  news: ['.pdf', '.jpg', '.jpeg', '.png'],
+};
+
+export const RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE: Record<string, number> = {
+  dataset: 500 * 1024 * 1024,
+  paper: 50 * 1024 * 1024,
+  tool: 200 * 1024 * 1024,
+  tutorial: 100 * 1024 * 1024,
+  prompt: 10 * 1024 * 1024,
+  project: 200 * 1024 * 1024,
+  news: 20 * 1024 * 1024,
+};
+
+// Union of every per-type list — the loosest possible allow-list, used by
+// the multer first-pass filter in middleware/upload.ts (same "cheap filter
+// here, authoritative check in uploadObject()" pattern as RESOURCE_UPLOAD_EXTENSIONS).
+export const RESOURCE_ATTACHMENT_ALLOWED_EXTENSIONS = Array.from(
+  new Set(Object.values(RESOURCE_ATTACHMENT_EXTENSIONS_BY_TYPE).flat()),
+);
+export const RESOURCE_ATTACHMENT_MAX_FILE_SIZE = Math.max(
+  ...Object.values(RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE),
+);
 
 interface ValidatedFile {
   extension: string;
@@ -245,14 +286,30 @@ export class StorageService {
 
     const checksum = createHash('sha256').update(file.buffer).digest('hex');
 
-    await r2Client.send(
-      new PutObjectCommand({
-        Bucket: r2BucketName,
-        Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-    );
+    try {
+      await r2Client.send(
+        new PutObjectCommand({
+          Bucket: r2BucketName,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        }),
+      );
+    } catch (error) {
+      // Never let a raw network/TLS/SDK error (e.g. an OpenSSL handshake
+      // failure from a bad R2_ACCOUNT_ID) reach the client — those messages
+      // are internal implementation detail, not something a user can act on.
+      // Logged in full server-side; the client gets a clean, honest message.
+      logger.error('R2 upload failed', {
+        key,
+        error: error instanceof Error ? error.message : error,
+      });
+      throw new ApiError(
+        503,
+        'SERVICE_UNAVAILABLE',
+        'File storage is temporarily unavailable. Please try again in a moment.',
+      );
+    }
 
     return checksum;
   }
@@ -319,17 +376,32 @@ export class StorageService {
     return r2PublicUrl ? `${r2PublicUrl}/${key}` : null;
   }
 
+  // `downloadFilename`, when given, sets ResponseContentDisposition on the
+  // presigned URL itself — R2 (like S3) honors this as a real response
+  // header, so the browser downloads with the right filename and forces a
+  // save-as instead of navigating/rendering inline. Far more reliable than
+  // the client-side `<a download>` attribute, which most browsers ignore for
+  // a cross-origin URL like this one.
   static async getSignedDownloadUrl(
     key: string,
     expirySeconds = DOWNLOAD_URL_EXPIRY_SECONDS,
+    downloadFilename?: string,
   ): Promise<string> {
     if (!r2BucketName) {
       throw new ApiError(503, 'SERVICE_UNAVAILABLE', 'File storage is not configured.');
     }
 
-    return getSignedUrl(r2Client, new GetObjectCommand({ Bucket: r2BucketName, Key: key }), {
-      expiresIn: expirySeconds,
-    });
+    return getSignedUrl(
+      r2Client,
+      new GetObjectCommand({
+        Bucket: r2BucketName,
+        Key: key,
+        ...(downloadFilename
+          ? { ResponseContentDisposition: `attachment; filename="${downloadFilename.replace(/"/g, '')}"` }
+          : {}),
+      }),
+      { expiresIn: expirySeconds },
+    );
   }
 
   static getSignedAvatarUrl(key: string): Promise<string> {
@@ -454,5 +526,30 @@ export class StorageService {
       DOCUMENTATION_MAX_FILE_SIZE,
     );
     return { key: metadata.key, checksum: metadata.checksum };
+  }
+
+  // Universal multi-file attachment upload (ResourceFile) — validated against
+  // the uploading resource's own type-specific allow-list/size cap, not the
+  // single-slot lists above. Returns full metadata since ResourceFile stores
+  // filename/mime/extension/size/checksum per row (unlike the single-slot
+  // flows, which only need the key + checksum).
+  static async uploadResourceAttachment(
+    resourceType: string,
+    resourceId: string,
+    file: UploadedFile,
+  ): Promise<StoredObjectMetadata> {
+    const allowedExtensions = RESOURCE_ATTACHMENT_EXTENSIONS_BY_TYPE[resourceType];
+    if (!allowedExtensions) {
+      throw new ApiError(400, 'VALIDATION_ERROR', `Resource type ${resourceType} does not support attachments.`);
+    }
+    const maxFileSize = RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE[resourceType] ?? RESOURCE_ATTACHMENT_MAX_FILE_SIZE;
+
+    return StorageService.uploadObject(
+      STORAGE_FOLDERS.attachments,
+      resourceId,
+      file,
+      allowedExtensions,
+      maxFileSize,
+    );
   }
 }

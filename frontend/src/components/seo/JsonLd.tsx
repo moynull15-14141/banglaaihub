@@ -10,6 +10,15 @@ interface ResourceJsonLdProps {
   resource: Resource;
 }
 
+// `JSON.stringify` does not escape `<` — a title/description/display-name
+// containing `</script>` would prematurely close this tag and let arbitrary
+// markup execute. Escaping every `<` as its unicode form is inert to JSON
+// parsers (schema.org crawlers included) but can no longer be interpreted
+// as an HTML tag boundary by the browser.
+function safeJsonLdStringify(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 // Schema.org structured data — mirrors the DatasetJsonLd pattern documented
 // in project-planning/12-frontend-architecture.md, generalized across
 // resource types since the backend serves all types from one /resources/:slug
@@ -35,7 +44,7 @@ export function ResourceJsonLd({ resource }: ResourceJsonLdProps) {
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      dangerouslySetInnerHTML={{ __html: safeJsonLdStringify(jsonLd) }}
     />
   );
 }

@@ -51,8 +51,18 @@ export function ProfileView({ username }: ProfileViewProps) {
         avatarUrl={profile.avatar_url}
         bio={profile.bio}
         institution={profile.institution}
+        location={profile.location}
         reputationScore={profile.reputation_score}
         isVerified={profile.is_verified}
+        links={[
+          { label: 'Website', url: profile.website_url },
+          { label: 'GitHub', url: profile.github_url },
+          { label: 'Hugging Face', url: profile.huggingface_url },
+          { label: 'Kaggle', url: profile.kaggle_url },
+          { label: 'Google Scholar', url: profile.scholar_url },
+          { label: 'LinkedIn', url: profile.linkedin_url },
+          { label: 'X', url: profile.x_url },
+        ]}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

@@ -304,6 +304,11 @@ GET /api/v1/resources/:slug
 **Response (200):**
 Full resource object including dataset/paper-specific fields.
 
+> **Visibility (Phase 2.3):** `private` resources 404 for everyone except the author and
+> moderators (same "never leak existence" discipline as a non-approved resource). `unlisted`
+> is viewable by anyone with the direct link/slug, but — like `private` — is excluded from
+> `GET /resources`'s public listing/search results (moderators still see everything there).
+
 ---
 
 ### Submit Resource
@@ -356,30 +361,73 @@ PUT /api/v1/resources/:slug
 Authorization: Bearer <access_token>
 ```
 
-> Only author or admin can update.
+> Only author or admin can update. If the author edits an `approved` resource, it goes back
+> to `status: pending` for re-review (a moderator editing someone else's resource via
+> `resource:edit_any` does not trigger this — that's a moderation action, not a resubmission).
+> Accepts the same body as Submit Resource, plus `visibility`.
 
 ---
 
-### Delete Resource (Soft Delete)
+### Delete Resource (Phase 2.3)
 
 ```
-DELETE /api/v1/resources/:slug
+DELETE /api/v1/resources/:slug?force=true
 Authorization: Bearer <access_token>
 ```
 
-> Sets `deleted_at` timestamp. Data is NOT removed from database.
+> `pending`/`rejected` resources are **hard-deleted** immediately (the row, its
+> dataset/paper/tool row, `resource_files`, tags, bookmarks, and comments are all removed;
+> reports/reputation events referencing it are kept with the reference set to NULL) — its R2
+> files are deleted too. An `approved` resource is **soft-deleted** (`deleted_at` set,
+> restorable). `force=true` is only honored for someone holding `resource:delete_any`
+> (admin) — it hard-deletes regardless of status.
 
 ---
 
-### Upload Dataset File
+### Upload Primary File (single-slot)
 
 ```
-POST /api/v1/resources/:slug/upload
+POST /api/v1/resources/:slug/upload?kind=dataset|thumbnail|pdf|asset|documentation
 Authorization: Bearer <access_token>
 Content-Type: multipart/form-data
 ```
 
-> File goes to Cloudflare R2. Returns signed URL.
+> File goes to Cloudflare R2. Returns a signed URL. `kind` selects which single-slot field
+> is written (`dataset.file_url`, `resource.thumbnail_url`, `paper.pdf_url`, `tool.file_url`,
+> `resource.documentation_url`); each is a single, replace-in-place file. See the
+> Attachments endpoints below for the newer, multi-file mechanism.
+
+---
+
+### Download
+
+```
+GET  /api/v1/resources/:slug/download?file_id=          -- issue a signed URL (no analytics)
+POST /api/v1/resources/:slug/download/confirm?file_id=   -- record the download (analytics)
+```
+
+> Split in Phase 2.3 so `download_count`/analytics only increment once the client has
+> actually obtained a working signed URL and handed it off to the browser — not merely on
+> hitting the GET. Omit `file_id` for the resource's legacy primary file; pass it to target
+> a specific `resource_files` attachment. `GET` returns `{ url, filename, size_bytes }`
+> (a JSON response, not a redirect).
+
+---
+
+### Attachments (Phase 2.3 — `resource_files`)
+
+```
+POST   /api/v1/resources/:slug/attachments?display_name=      -- add (multipart, any resource type)
+DELETE /api/v1/resources/:slug/attachments/:fileId            -- delete (R2 object removed too)
+PUT    /api/v1/resources/:slug/attachments/:fileId             -- replace (delete-then-add, same slot)
+PATCH  /api/v1/resources/:slug/attachments/reorder             -- { "file_ids": [...] } full ordered list
+Authorization: Bearer <access_token>
+```
+
+> Author (`resource:edit_own`) or a moderator (`resource:edit_any`) can manage attachments.
+> Allowed extensions/size are enforced per resource `type` — see doc 10 table 22. Every
+> resource in `GET /resources`/`GET /resources/:slug` now includes `attachments` (each with
+> a signed `url`, never a raw R2 key) and `attachment_count`.
 
 ---
 

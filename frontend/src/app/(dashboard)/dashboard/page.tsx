@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BecomeContributorCard } from '@/components/contributor/BecomeContributorCard';
 import { RecentSubmissionsCard } from '@/components/resource/RecentSubmissionsCard';
 import { RecentDownloadsCard } from '@/components/resource/RecentDownloadsCard';
+import { RecentNotificationsCard } from '@/components/notification/RecentNotificationsCard';
 import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
 import { resourceHref } from '@/lib/constants/routes';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -96,6 +97,10 @@ export default function DashboardPage() {
 
       <div className="mt-6">
         <BecomeContributorCard />
+      </div>
+
+      <div className="mt-6">
+        <RecentNotificationsCard />
       </div>
 
       {isContributor ? (

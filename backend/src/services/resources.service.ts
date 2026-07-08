@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { Prisma } from '../generated/prisma/client';
 import { prisma } from '../config/database';
 import { logger } from '../config/logger';
@@ -17,6 +18,7 @@ import type {
   CreateCategoryInput,
   CreateResourceInput,
   ListResourcesQuery,
+  ReorderResourceAttachmentsInput,
   UpdateCategoryInput,
   UpdateResourceInput,
 } from '../validators/resource.validator';
@@ -29,6 +31,7 @@ export const resourceInclude = {
   dataset: true,
   paper: true,
   tool: true,
+  files: { orderBy: { sortOrder: 'asc' } },
 } satisfies Prisma.ResourceInclude;
 
 export type ResourceWithRelations = Prisma.ResourceGetPayload<{ include: typeof resourceInclude }>;
@@ -80,18 +83,37 @@ function objectKeyOrNull(value: string | null): string | null {
   return value;
 }
 
+// ResourceFile row -> API shape. Always a signed URL (never the raw storage
+// key), same discipline as every other file field on this resource.
+async function toResourceFileDto(file: ResourceWithRelations['files'][number]): Promise<Record<string, unknown>> {
+  return {
+    id: file.id,
+    filename: file.filename,
+    display_name: file.displayName,
+    mime_type: file.mimeType,
+    extension: file.extension,
+    size_bytes: file.sizeBytes.toString(),
+    checksum_sha256: file.checksumSha256,
+    sort_order: file.sortOrder,
+    uploaded_by: file.uploadedBy,
+    uploaded_at: file.uploadedAt,
+    url: await StorageService.getSignedDownloadUrl(file.storageKey),
+  };
+}
+
 // Async because thumbnail_url/documentation_url/dataset.file_url/
 // paper.pdf_url/tool.file_url may each be either a plain external URL
 // (passed through unchanged, the pre-existing behavior) or an R2 object key
 // (resolved to a short-lived signed URL, exactly like avatars already do via
 // StorageService.resolveUrl) — the raw key itself is never returned.
 export async function toResourceDto(resource: ResourceWithRelations): Promise<Record<string, unknown>> {
-  const [thumbnailUrl, documentationUrl, datasetFileUrl, paperPdfUrl, toolFileUrl] = await Promise.all([
+  const [thumbnailUrl, documentationUrl, datasetFileUrl, paperPdfUrl, toolFileUrl, attachments] = await Promise.all([
     StorageService.resolveUrl(resource.thumbnailUrl),
     StorageService.resolveUrl(resource.documentationUrl),
     resource.dataset ? StorageService.resolveUrl(resource.dataset.fileUrl) : null,
     resource.paper ? StorageService.resolveUrl(resource.paper.pdfUrl) : null,
     resource.tool ? StorageService.resolveUrl(resource.tool.fileUrl) : null,
+    Promise.all(resource.files.map(toResourceFileDto)),
   ]);
 
   return {
@@ -107,6 +129,8 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
     external_url: resource.externalUrl,
     thumbnail_url: thumbnailUrl,
     documentation_url: documentationUrl,
+    attachments,
+    attachment_count: resource.files.length,
     author: resource.author
       ? {
           id: resource.author.id,
@@ -132,6 +156,7 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
     published_at: resource.publishedAt,
     created_at: resource.createdAt,
     updated_at: resource.updatedAt,
+    deleted_at: resource.deletedAt,
     dataset: resource.dataset
       ? {
           version: resource.dataset.version,
@@ -302,20 +327,35 @@ export class ResourceService {
     pagination: PaginationParams,
     requester?: AccessTokenPayload,
   ): Promise<{ data: unknown[]; meta: PaginationMeta }> {
-    const where: Prisma.ResourceWhereInput = { deletedAt: null };
+    let canModerate = false;
+    let canRestoreDeleted = false;
+    if (requester) {
+      const permissions = await AuthService.getUserPermissions(requester.userId);
+      canModerate = MODERATION_PERMISSIONS.some((permission) => permissions.has(permission));
+      // Same permission the restore endpoint itself requires (resource:edit_any,
+      // see POST /admin/resources/:id/restore) — gating the listing any
+      // stricter would let a role restore a resource it can never find.
+      canRestoreDeleted = permissions.has('resource:edit_any');
+    }
+
+    // `deleted=true` requires the same permission as restoring — surfaces
+    // soft-deleted resources so there's something for the restore action to
+    // find, instead of them just vanishing from every list once deleted.
+    const where: Prisma.ResourceWhereInput =
+      query.deleted && canRestoreDeleted ? { deletedAt: { not: null } } : { deletedAt: null };
 
     if (query.type) where.type = query.type;
     if (query.language) where.language = query.language;
     if (query.category) where.category = { slug: query.category };
     if (query.featured) where.featured = true;
 
-    let canModerate = false;
-    if (requester) {
-      const permissions = await AuthService.getUserPermissions(requester.userId);
-      canModerate = MODERATION_PERMISSIONS.some((permission) => permissions.has(permission));
-    }
-
     where.status = query.status && canModerate ? query.status : 'approved';
+    // Public browsing/search only ever shows `public` resources — `private`
+    // and `unlisted` are reachable by direct slug (assertCanView allows
+    // unlisted through) but never appear in a list. Moderators see
+    // everything, since they need to be able to find/review private
+    // submissions too.
+    if (!canModerate) where.visibility = 'public';
 
     const [total, resources] = await Promise.all([
       prisma.resource.count({ where }),
@@ -331,23 +371,26 @@ export class ResourceService {
     return { data: await Promise.all(resources.map(toResourceDto)), meta: buildPaginationMeta(total, pagination) };
   }
 
-  // Shared by getBySlug()/getDownloadUrl() — a non-approved resource is only
-  // visible to its own author or someone with a moderation permission.
-  // Pending/rejected/flagged resources 404 for everyone else, same as if
-  // they didn't exist (never leaks that a pending resource exists at all).
+  // Shared by getBySlug()/getDownloadUrl() — a non-approved resource, or a
+  // `private` one regardless of status, is only visible to its own author or
+  // someone with a moderation permission. `unlisted` is intentionally NOT
+  // checked here — per Part 8, "anyone with the URL" can view it; it's only
+  // excluded from list()'s public browsing/search results. 404 (never 403)
+  // in every denied case, so a private/pending resource's existence is never
+  // leaked to someone who shouldn't see it.
   private static async assertCanView(
-    resource: { authorId: string | null; status: string },
+    resource: { authorId: string | null; status: string; visibility: string },
     requester?: AccessTokenPayload,
   ): Promise<void> {
-    if (resource.status === 'approved') return;
-
     const isOwner = requester?.userId === resource.authorId;
     let canModerate = false;
     if (requester) {
       const permissions = await AuthService.getUserPermissions(requester.userId);
       canModerate = MODERATION_PERMISSIONS.some((permission) => permissions.has(permission));
     }
-    if (!isOwner && !canModerate) {
+    if (isOwner || canModerate) return;
+
+    if (resource.status !== 'approved' || resource.visibility === 'private') {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
     }
   }
@@ -376,28 +419,53 @@ export class ResourceService {
       data: { resourceId: resource.id, eventType: 'view', userId: requester?.userId ?? null },
     });
 
-    return toResourceDto(resource);
+    const dto = await toResourceDto(resource);
+    // Merged in separately (never a param on toResourceDto itself) — several
+    // call sites pass that function directly to Array.map, where a second
+    // parameter would silently receive the array index instead of a real
+    // argument. Only the single-resource detail view needs this, so it's
+    // resolved here instead.
+    if (requester) {
+      const bookmark = await prisma.bookmark.findUnique({
+        where: { userId_resourceId: { userId: requester.userId, resourceId: resource.id } },
+        select: { id: true },
+      });
+      dto.is_bookmarked = bookmark !== null;
+    }
+
+    return dto;
   }
 
-  // GET /resources/:slug/download — one unified endpoint for whichever file
-  // the resource type actually has (dataset.file_url / tool.file_url /
-  // paper.pdf_url); everything else has nothing downloadable. Never returns
-  // the raw R2 key — always a signed URL (or the external URL unchanged, if
-  // that's what's stored), same resolution StorageService.resolveUrl already
-  // uses for every other field.
+  // GET /resources/:slug/download?file_id= — resolves either a specific
+  // ResourceFile attachment (file_id given) or the resource's legacy primary
+  // file (file_id omitted: dataset.file_url / tool.file_url / paper.pdf_url).
+  // Never returns the raw R2 key — always a signed URL (or the external URL
+  // unchanged, if that's what's stored). Deliberately does NOT record
+  // analytics/download_count — this only issues the URL; confirmDownload()
+  // below is what counts as "a successful download" (Part 5).
   static async getDownloadUrl(
     slug: string,
-    requester?: AccessTokenPayload,
-  ): Promise<{ url: string }> {
+    requester: AccessTokenPayload | undefined,
+    fileId?: string,
+  ): Promise<{ url: string; filename: string; size_bytes: string | null }> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true, paper: true, tool: true },
+      include: { dataset: true, paper: true, tool: true, files: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
     }
 
     await this.assertCanView(resource, requester);
+
+    if (fileId) {
+      const file = resource.files.find((f) => f.id === fileId);
+      if (!file) {
+        throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Attachment not found.');
+      }
+      const url = await StorageService.getSignedDownloadUrl(file.storageKey, undefined, file.filename);
+      return { url, filename: file.filename, size_bytes: file.sizeBytes.toString() };
+    }
 
     const key =
       resource.type === 'dataset'
@@ -412,10 +480,41 @@ export class ResourceService {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'This resource has no downloadable file.');
     }
 
-    const url = await StorageService.resolveUrl(key);
-    if (!url) {
-      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'This resource has no downloadable file.');
+    const sizeBytes =
+      resource.type === 'dataset'
+        ? (resource.dataset?.fileSizeBytes?.toString() ?? null)
+        : resource.type === 'tool'
+          ? (resource.tool?.fileSizeBytes?.toString() ?? null)
+          : null;
+    // Legacy single-slot fields never stored the original filename — best
+    // effort synthesis from the resource's own slug + the key's real
+    // extension (the key always ends in it, see StorageService.uploadObject).
+    const isExternal = /^https?:\/\//i.test(key);
+    const filename = isExternal ? resource.slug : `${resource.slug}${path.extname(key)}`;
+    const url = isExternal ? key : await StorageService.getSignedDownloadUrl(key, undefined, filename);
+
+    return { url, filename, size_bytes: sizeBytes };
+  }
+
+  // POST /resources/:slug/download/confirm?file_id= — called by the client
+  // once it has actually obtained the signed URL from getDownloadUrl() above
+  // and handed it to the browser. This is the "successful download" event
+  // per Part 5, not the URL-issuing GET.
+  static async confirmDownload(
+    slug: string,
+    requester: AccessTokenPayload | undefined,
+    fileId?: string,
+  ): Promise<void> {
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
     }
+
+    // Same visibility check as getDownloadUrl() — without it, anyone who
+    // knows (or guesses) a private/pending resource's slug could inflate its
+    // download_count and analytics via this endpoint alone, without ever
+    // having been authorized to obtain a download URL for it.
+    await this.assertCanView(resource, requester);
 
     // Awaited, not fire-and-forget — Phase 2A found that void'd counter
     // increments can be lost under process-exit pressure (Node cuts off
@@ -428,7 +527,11 @@ export class ResourceService {
     });
 
     await prisma.resourceAnalytics.create({
-      data: { resourceId: resource.id, eventType: 'download', userId: requester?.userId ?? null },
+      data: {
+        resourceId: resource.id,
+        eventType: 'download',
+        userId: requester?.userId ?? null,
+      },
     });
 
     await writeAuditLog({
@@ -436,9 +539,8 @@ export class ResourceService {
       action: 'resource.download',
       targetType: 'resource',
       targetId: resource.id,
+      newValue: fileId ? { file_id: fileId } : undefined,
     });
-
-    return { url };
   }
 
   // POST /resources/:slug/share — logs a ResourceAnalytics 'share' event.
@@ -447,9 +549,17 @@ export class ResourceService {
   // count itself is the share count, read on demand rather than duplicated
   // into a second, cache-able-to-drift counter.
   static async logShare(slug: string, requester?: AccessTokenPayload): Promise<void> {
-    const resourceId = await this.resolveIdBySlug(slug);
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+    // Same reasoning as confirmDownload() — without this, the share count
+    // could be inflated for a private/pending resource by anyone who knows
+    // its slug, without ever having been authorized to view it.
+    await this.assertCanView(resource, requester);
+
     await prisma.resourceAnalytics.create({
-      data: { resourceId, eventType: 'share', userId: requester?.userId ?? null },
+      data: { resourceId: resource.id, eventType: 'share', userId: requester?.userId ?? null },
     });
   }
 
@@ -575,10 +685,18 @@ export class ResourceService {
 
     await assertCanModify(resource, requester, 'edit');
 
+    // Editing an approved resource sends it back to moderation — but only
+    // when the AUTHOR themselves makes the edit. A moderator/editor fixing
+    // someone else's resource via resource:edit_any is a moderation action,
+    // not a resubmission, and shouldn't force a re-review of their own change.
+    const isOwnEdit = resource.authorId === requester.userId;
+    const resubmitting = isOwnEdit && resource.status === 'approved';
+
     const oldValue = {
       title: resource.title,
       description: resource.description,
       categoryId: resource.categoryId,
+      status: resource.status,
     };
 
     await prisma.$transaction(async (tx) => {
@@ -592,6 +710,8 @@ export class ResourceService {
           license: input.license,
           externalUrl: input.external_url,
           thumbnailUrl: input.thumbnail_url,
+          visibility: input.visibility,
+          ...(resubmitting ? { status: 'pending' as const, approvedBy: null, approvedAt: null } : {}),
         },
       });
 
@@ -611,6 +731,34 @@ export class ResourceService {
         });
       }
 
+      if (input.paper && resource.type === 'paper') {
+        await tx.paper.update({
+          where: { resourceId: resource.id },
+          data: {
+            abstract: input.paper.abstract,
+            authors: input.paper.authors,
+            venue: input.paper.venue,
+            year: input.paper.year,
+            doi: input.paper.doi,
+            arxivId: input.paper.arxiv_id,
+            pdfUrl: input.paper.pdf_url,
+            codeUrl: input.paper.code_url,
+          },
+        });
+      }
+
+      if (input.tool && resource.type === 'tool') {
+        await tx.tool.update({
+          where: { resourceId: resource.id },
+          data: {
+            toolType: input.tool.tool_type,
+            platform: input.tool.platform,
+            demoUrl: input.tool.demo_url,
+            installCommand: input.tool.install_command,
+          },
+        });
+      }
+
       if (input.tags) {
         await tx.resourceTag.deleteMany({ where: { resourceId: resource.id } });
         await linkTags(tx, resource.id, input.tags);
@@ -619,7 +767,7 @@ export class ResourceService {
 
     await writeAuditLog({
       actorId: requester.userId,
-      action: 'resource.update',
+      action: resubmitting ? 'resource.update_resubmit' : 'resource.update',
       targetType: 'resource',
       targetId: resource.id,
       oldValue,
@@ -627,6 +775,7 @@ export class ResourceService {
         title: input.title,
         description: input.description,
         categoryId: input.category_id,
+        status: resubmitting ? 'pending' : resource.status,
       },
     });
 
@@ -635,13 +784,69 @@ export class ResourceService {
     return toResourceDto(await this.getResourceWithRelations(resource.id));
   }
 
-  static async softDelete(slug: string, requester: AccessTokenPayload): Promise<void> {
-    const resource = await prisma.resource.findUnique({ where: { slug } });
+  // Delete policy (Part 7): pending/rejected are hard-deleted immediately
+  // (nothing worth keeping a moderation trail for); approved resources are
+  // soft-deleted (deletedAt, restorable) since they were public and may need
+  // to come back. `force=true` lets an admin (resource:delete_any) hard-delete
+  // even an approved resource — the one case that bypasses the status rule.
+  static async deleteResource(
+    slug: string,
+    requester: AccessTokenPayload,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
+    const resource = await prisma.resource.findUnique({
+      where: { slug },
+      include: { dataset: true, paper: true, tool: true, files: true },
+    });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
     }
 
-    await assertCanModify(resource, requester, 'delete');
+    const permissions = await AuthService.getUserPermissions(requester.userId);
+    const isOwner = resource.authorId === requester.userId;
+    const canDeleteAny = permissions.has('resource:delete_any');
+
+    if (!canDeleteAny && !(isOwner && permissions.has('resource:delete_own'))) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have permission to delete this resource.');
+    }
+
+    const hardDelete =
+      options.force === true ? canDeleteAny : resource.status === 'pending' || resource.status === 'rejected';
+
+    if (hardDelete) {
+      const keys: (string | null)[] = [
+        objectKeyOrNull(resource.thumbnailUrl),
+        objectKeyOrNull(resource.documentationUrl),
+        resource.dataset?.fileUrl ?? null,
+        objectKeyOrNull(resource.paper?.pdfUrl ?? null),
+        resource.tool?.fileUrl ?? null,
+        ...resource.files.map((file) => file.storageKey),
+      ];
+
+      // DB-level FK actions handle the rest: Dataset/Paper/Tool/ResourceFile/
+      // ResourceTag/Bookmark/Comment are all ON DELETE CASCADE (removed with
+      // the resource); Report.resource_id and ReputationEvent.resource_id are
+      // ON DELETE SET NULL (that history is preserved, just unlinked).
+      await prisma.resource.delete({ where: { id: resource.id } });
+
+      await Promise.all(keys.map((key) => StorageService.deleteObject(key).catch(() => {})));
+
+      await writeAuditLog({
+        actorId: requester.userId,
+        action: 'resource.delete_hard',
+        targetType: 'resource',
+        targetId: resource.id,
+        oldValue: { status: resource.status, slug: resource.slug, title: resource.title },
+      });
+
+      await SearchService.deleteResource(resource.id).catch((error: unknown) => {
+        logger.warn('Search index cleanup failed after hard delete', {
+          resourceId: resource.id,
+          error: error instanceof Error ? error.message : error,
+        });
+      });
+      return;
+    }
 
     await prisma.resource.update({ where: { id: resource.id }, data: { deletedAt: new Date() } });
 
@@ -915,6 +1120,145 @@ export class ResourceService {
     void this.syncSearchIndex(resource.id);
 
     return { file_url: fileUrl };
+  }
+
+  // --- Multi-file attachments (ResourceFile) ---------------------------------
+  // Additive on top of uploadFile()/the single-slot fields above — a separate,
+  // parallel capability for every resource type (including tutorial/prompt/
+  // project/news, which have no single-slot field at all), not a replacement.
+
+  static async addAttachment(
+    slug: string,
+    requester: AccessTokenPayload,
+    file: UploadedFile,
+    displayName?: string,
+  ): Promise<Record<string, unknown>> {
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+
+    await assertCanModify(resource, requester, 'edit');
+
+    const uploaded = await StorageService.uploadResourceAttachment(resource.type, resource.id, file);
+
+    const maxSortOrder = await prisma.resourceFile.aggregate({
+      where: { resourceId: resource.id },
+      _max: { sortOrder: true },
+    });
+
+    const created = await prisma.resourceFile.create({
+      data: {
+        resourceId: resource.id,
+        storageKey: uploaded.key,
+        displayName: displayName?.trim() || uploaded.filename,
+        filename: uploaded.filename,
+        mimeType: uploaded.mime,
+        extension: uploaded.extension,
+        sizeBytes: BigInt(uploaded.size),
+        checksumSha256: uploaded.checksum,
+        sortOrder: (maxSortOrder._max.sortOrder ?? -1) + 1,
+        uploadedBy: requester.userId,
+      },
+    });
+
+    await writeAuditLog({
+      actorId: requester.userId,
+      action: 'resource.attachment.add',
+      targetType: 'resource',
+      targetId: resource.id,
+      newValue: { fileId: created.id, filename: created.filename, size: uploaded.size },
+    });
+
+    void this.syncSearchIndex(resource.id);
+
+    return toResourceFileDto(created);
+  }
+
+  static async deleteAttachment(slug: string, requester: AccessTokenPayload, fileId: string): Promise<void> {
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+
+    await assertCanModify(resource, requester, 'edit');
+
+    const file = await prisma.resourceFile.findUnique({ where: { id: fileId } });
+    if (!file || file.resourceId !== resource.id) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Attachment not found.');
+    }
+
+    await prisma.resourceFile.delete({ where: { id: fileId } });
+    await StorageService.deleteObject(file.storageKey).catch(() => {});
+
+    await writeAuditLog({
+      actorId: requester.userId,
+      action: 'resource.attachment.delete',
+      targetType: 'resource',
+      targetId: resource.id,
+      oldValue: { fileId: file.id, filename: file.filename },
+    });
+
+    void this.syncSearchIndex(resource.id);
+  }
+
+  // Delete-then-add in one call, so the UI can offer a single "Replace" action
+  // instead of two separate steps — reuses addAttachment/deleteAttachment
+  // rather than duplicating either.
+  static async replaceAttachment(
+    slug: string,
+    requester: AccessTokenPayload,
+    fileId: string,
+    file: UploadedFile,
+  ): Promise<Record<string, unknown>> {
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+
+    const existing = await prisma.resourceFile.findUnique({ where: { id: fileId } });
+    if (!existing || existing.resourceId !== resource.id) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Attachment not found.');
+    }
+
+    const replacement = await this.addAttachment(slug, requester, file, existing.displayName);
+    await this.deleteAttachment(slug, requester, fileId);
+
+    return replacement;
+  }
+
+  static async reorderAttachments(
+    slug: string,
+    requester: AccessTokenPayload,
+    input: ReorderResourceAttachmentsInput,
+  ): Promise<void> {
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+
+    await assertCanModify(resource, requester, 'edit');
+
+    const files = await prisma.resourceFile.findMany({ where: { resourceId: resource.id } });
+    const ownedIds = new Set(files.map((file) => file.id));
+    const invalid = input.file_ids.filter((id) => !ownedIds.has(id));
+    if (invalid.length > 0 || input.file_ids.length !== files.length) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'file_ids must be exactly the resource’s current attachment IDs.');
+    }
+
+    await prisma.$transaction(
+      input.file_ids.map((id, index) =>
+        prisma.resourceFile.update({ where: { id }, data: { sortOrder: index } }),
+      ),
+    );
+
+    await writeAuditLog({
+      actorId: requester.userId,
+      action: 'resource.attachment.reorder',
+      targetType: 'resource',
+      targetId: resource.id,
+      newValue: { file_ids: input.file_ids },
+    });
   }
 
   // --- Categories -----------------------------------------------------------
