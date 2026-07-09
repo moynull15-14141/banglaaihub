@@ -8,6 +8,7 @@ import {
   featureResourceAdmin,
   getAdminDashboard,
   getContributorApplicationAdmin,
+  getSearchAnalyticsAdmin,
   listAuditLogsAdmin,
   listContributorApplicationsAdmin,
   listPendingResourcesAdmin,
@@ -55,6 +56,13 @@ export function useAdminActivityFeed(limit = 8) {
   return useQuery({
     queryKey: ['admin', 'audit-logs', limit],
     queryFn: () => listAuditLogsAdmin({ sort: 'newest', limit }),
+  });
+}
+
+export function useAdminSearchAnalytics() {
+  return useQuery({
+    queryKey: ['admin', 'search-analytics'],
+    queryFn: getSearchAnalyticsAdmin,
   });
 }
 

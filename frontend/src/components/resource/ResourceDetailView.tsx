@@ -222,6 +222,7 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
       <SimilarResourcesCard
         type={resource.type}
         categorySlug={resource.category?.slug}
+        tags={resource.tags}
         excludeSlug={resource.slug}
       />
 

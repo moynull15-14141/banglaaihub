@@ -24,7 +24,7 @@ import type {
 } from '../validators/resource.validator';
 
 export const resourceInclude = {
-  author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+  author: { select: { id: true, username: true, displayName: true, avatarUrl: true, isVerified: true } },
   approver: { select: { id: true, username: true, displayName: true } },
   category: { select: { id: true, name: true, slug: true } },
   resourceTags: { include: { tag: { select: { id: true, name: true, slug: true } } } },
@@ -146,6 +146,7 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
           username: resource.author.username,
           display_name: resource.author.displayName,
           avatar_url: resource.author.avatarUrl,
+          is_verified: resource.author.isVerified,
         }
       : null,
     category: resource.category,
@@ -271,9 +272,56 @@ function resolveSort(sort?: string): Prisma.ResourceOrderByWithRelationInput {
       return { downloadCount: 'desc' };
     case 'bookmarks':
       return { bookmarkCount: 'desc' };
+    case 'updated':
+      return { updatedAt: 'desc' };
+    case 'alpha':
+      return { title: 'asc' };
     default:
       return { createdAt: 'desc' };
+    // 'trending' is handled separately in list() (resolveTrendingPage) — it
+    // needs a windowed aggregate over ResourceAnalytics, not a plain orderBy.
   }
+}
+
+// Phase 3B — "trending" sort. Weighted score over ResourceAnalytics events
+// in a rolling 7-day window (download=3, bookmark=2, share=2, view=1),
+// computed in JS rather than raw SQL — consistent with the rest of this
+// codebase, which never drops to raw SQL anywhere. Fine at this platform's
+// scale: the candidate set is already narrowed by the same `where` clause
+// list() uses everywhere else before the analytics grouping happens.
+const TRENDING_WINDOW_DAYS = 7;
+const TRENDING_EVENT_WEIGHTS: Record<string, number> = {
+  download: 3,
+  bookmark: 2,
+  share: 2,
+  view: 1,
+};
+
+async function resolveTrendingPage(
+  where: Prisma.ResourceWhereInput,
+  pagination: PaginationParams,
+): Promise<{ ids: string[]; total: number }> {
+  const candidates = await prisma.resource.findMany({ where, select: { id: true } });
+  const candidateIds = candidates.map((c) => c.id);
+  if (candidateIds.length === 0) return { ids: [], total: 0 };
+
+  const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const grouped = await prisma.resourceAnalytics.groupBy({
+    by: ['resourceId', 'eventType'],
+    where: { resourceId: { in: candidateIds }, createdAt: { gte: since } },
+    _count: { _all: true },
+  });
+
+  const scores = new Map<string, number>();
+  for (const id of candidateIds) scores.set(id, 0);
+  for (const row of grouped) {
+    const weight = TRENDING_EVENT_WEIGHTS[row.eventType] ?? 0;
+    scores.set(row.resourceId, (scores.get(row.resourceId) ?? 0) + weight * row._count._all);
+  }
+
+  const ordered = candidateIds.sort((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
+  const start = (pagination.page - 1) * pagination.limit;
+  return { ids: ordered.slice(start, start + pagination.limit), total: ordered.length };
 }
 
 // Batched to a fixed ~4 round trips regardless of tag count — the previous
@@ -400,6 +448,19 @@ export class ResourceService {
     if (query.language) where.language = query.language;
     if (query.category) where.category = { slug: query.category };
     if (query.featured) where.featured = true;
+    if (query.license) where.license = query.license;
+    // Substring match on username — the MeiliSearch-backed /search endpoint
+    // does an exact match instead (see search.service.ts's search() comment
+    // for why); this Prisma-backed path can afford `contains` cheaply.
+    if (query.author || query.verified) {
+      where.author = {
+        ...(query.author ? { username: { contains: query.author, mode: 'insensitive' } } : {}),
+        ...(query.verified ? { isVerified: true } : {}),
+      };
+    }
+    if (query.tags && query.tags.length > 0) {
+      where.resourceTags = { some: { tag: { slug: { in: query.tags } } } };
+    }
 
     where.status = query.status && canModerate ? query.status : 'approved';
     // Public browsing/search only ever shows `public` resources — `private`
@@ -408,6 +469,17 @@ export class ResourceService {
     // everything, since they need to be able to find/review private
     // submissions too.
     if (!canModerate) where.visibility = 'public';
+
+    if (query.sort === 'trending') {
+      const { ids, total } = await resolveTrendingPage(where, pagination);
+      if (ids.length === 0) return { data: [], meta: buildPaginationMeta(total, pagination) };
+      const resources = await prisma.resource.findMany({ where: { id: { in: ids } }, include: resourceInclude });
+      // findMany doesn't preserve `id IN [...]` order — re-sort to match the
+      // trending-score order already computed.
+      const byId = new Map(resources.map((r) => [r.id, r]));
+      const ordered = ids.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+      return { data: await Promise.all(ordered.map(toResourceDto)), meta: buildPaginationMeta(total, pagination) };
+    }
 
     const [total, resources] = await Promise.all([
       prisma.resource.count({ where }),
@@ -1811,6 +1883,16 @@ export class ResourceService {
   static async listTags(limit = 20): Promise<unknown[]> {
     const tags = await prisma.tag.findMany({ orderBy: { usageCount: 'desc' }, take: limit });
     return tags.map(toTagDto);
+  }
+
+  // Phase 3B — tag metadata lookup for the new /tags/[slug] page, mirroring
+  // getCategoryBySlug's role for /categories/[slug].
+  static async getTagBySlug(slug: string): Promise<unknown> {
+    const tag = await prisma.tag.findUnique({ where: { slug } });
+    if (!tag) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Tag not found.');
+    }
+    return toTagDto(tag);
   }
 
   static async searchTags(query: string): Promise<unknown[]> {

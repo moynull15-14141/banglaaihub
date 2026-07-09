@@ -1,6 +1,6 @@
 import { apiClient } from '@/lib/api/client';
 import type { ApiSuccessResponse, ResponseMeta } from '@/types/api';
-import type { AdminDashboardStats, AdminUser, AuditLogEntry } from '@/types/admin';
+import type { AdminDashboardStats, AdminUser, AuditLogEntry, SearchAnalyticsSummary } from '@/types/admin';
 import type { ListResourcesParams, Resource } from '@/types/resource';
 import type {
   ContributorApplicationAdminDetail,
@@ -164,6 +164,12 @@ export async function requestContributorApplicationRevisionAdmin(
     `/admin/contributor-applications/${encodeURIComponent(id)}/request-revision`,
     input,
   );
+  return response.data.data;
+}
+
+// Phase 3B — gated by the same system:audit_log_view permission as audit logs.
+export async function getSearchAnalyticsAdmin(): Promise<SearchAnalyticsSummary> {
+  const response = await apiClient.get<ApiSuccessResponse<SearchAnalyticsSummary>>('/admin/search-analytics');
   return response.data.data;
 }
 

@@ -1,4 +1,4 @@
-import { ClipboardList, Flag, LayoutDashboard, Sparkles, Users } from 'lucide-react';
+import { ClipboardList, Flag, LayoutDashboard, Search, Sparkles, Users } from 'lucide-react';
 import { ROUTES } from '@/lib/constants/routes';
 import type { RoleName } from '@/lib/constants/roles';
 
@@ -35,6 +35,12 @@ export const ADMIN_NAV_LINKS: {
     label: 'Reports',
     icon: Flag,
     roles: ['editor', 'admin', 'super_admin'],
+  },
+  {
+    href: ROUTES.adminSearchAnalytics,
+    label: 'Search Analytics',
+    icon: Search,
+    roles: ['admin', 'super_admin'],
   },
 ];
 

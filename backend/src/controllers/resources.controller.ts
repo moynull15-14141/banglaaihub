@@ -235,6 +235,11 @@ export async function searchTags(req: Request, res: Response): Promise<void> {
   sendSuccess(res, tags);
 }
 
+export async function getTagBySlug(req: Request, res: Response): Promise<void> {
+  const tag = await ResourceService.getTagBySlug(requireParam(req, 'slug'));
+  sendSuccess(res, tag);
+}
+
 export async function listTagResources(req: Request, res: Response): Promise<void> {
   const pagination = parsePagination(req.query as Record<string, string>);
   const result = await ResourceService.listTagResources(requireParam(req, 'slug'), pagination);

@@ -16,8 +16,18 @@ export interface ListResourcesResult {
   meta: ResponseMeta;
 }
 
-export async function listResources(params: ListResourcesParams = {}): Promise<ListResourcesResult> {
-  const response = await apiClient.get<ApiSuccessResponse<Resource[]>>('/resources', { params });
+export async function listResources(
+  params: ListResourcesParams = {},
+  signal?: AbortSignal,
+): Promise<ListResourcesResult> {
+  const { tags, ...rest } = params;
+  const response = await apiClient.get<ApiSuccessResponse<Resource[]>>('/resources', {
+    // Backend expects a single comma-separated string (see
+    // commaSeparatedTags in resource.validator.ts), not axios's default
+    // repeated-key array serialization.
+    params: { ...rest, tags: tags && tags.length > 0 ? tags.join(',') : undefined },
+    signal,
+  });
   return { data: response.data.data, meta: response.data.meta ?? {} };
 }
 

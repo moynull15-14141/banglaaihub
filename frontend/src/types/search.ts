@@ -6,6 +6,7 @@ export interface SearchResultAuthor {
   id: string;
   username: string;
   display_name: string | null;
+  is_verified: boolean;
 }
 
 // Deliberately narrower than Resource — mirrors toSearchResultDto() in
@@ -18,6 +19,8 @@ export interface SearchResult {
   description: string | null;
   type: ResourceType;
   category: ResourceCategory | null;
+  license: string | null;
+  format: string | null;
   tags: string[];
   author: SearchResultAuthor | null;
   view_count: number;
@@ -33,6 +36,28 @@ export interface SearchParams {
   category?: string;
   language?: ResourceLanguage;
   sort?: SearchSort;
+  // Phase 3B filters.
+  license?: string;
+  author?: string;
+  verified?: true;
+  tags?: string[];
   page?: number;
   limit?: number;
+}
+
+export interface SearchSuggestion {
+  id: string;
+  slug: string;
+  title: string;
+  type: ResourceType;
+}
+
+export interface PopularSearchEntry {
+  query: string;
+  count: number;
+}
+
+export interface LicenseFacet {
+  license: string;
+  count: number;
 }

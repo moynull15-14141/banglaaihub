@@ -38,6 +38,7 @@ export function Hero() {
               router.push(`${ROUTES.search}?q=${encodeURIComponent(query.trim())}`);
             }
           }}
+          showSuggestions
         />
       </div>
     </section>

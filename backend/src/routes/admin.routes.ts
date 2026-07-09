@@ -170,4 +170,12 @@ router.get(
 // --- Dashboard ---
 router.get('/dashboard', authenticate, authorize('admin:manage'), adminController.getDashboard);
 
+// --- Search analytics (read-only) — Phase 3B, gated the same as audit logs. ---
+router.get(
+  '/search-analytics',
+  authenticate,
+  authorize('system:audit_log_view'),
+  adminController.getSearchAnalytics,
+);
+
 export default router;

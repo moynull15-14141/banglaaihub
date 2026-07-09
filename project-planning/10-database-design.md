@@ -561,6 +561,26 @@ Allowed extensions and max size are enforced per resource `type`, not globally:
 Deleting a resource deletes its `resource_files` rows (`ON DELETE CASCADE`) and their R2
 objects; deleting a single attachment removes both the row and the R2 object immediately.
 
+### 23. `search_logs`
+
+Added for Phase 3B (Discovery System) — powers "popular searches" and the admin
+search-analytics view. Written fire-and-forget on every `GET /search` call, same
+best-effort pattern already used for MeiliSearch index sync (never blocks or fails
+the search itself).
+
+```sql
+search_logs
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── query         VARCHAR(300) NOT NULL
+├── result_count  INTEGER NOT NULL
+├── filters       JSONB                      -- type/category/language/license/tags/etc. applied
+├── user_id       UUID REFERENCES users(id) ON DELETE SET NULL  -- null for anonymous search
+└── created_at    TIMESTAMPTZ DEFAULT NOW()
+```
+
+"Popular searches" = `query` grouped and counted within a recent window (default 7 days).
+No-result searches (for the admin view) are simply rows where `result_count = 0`.
+
 ---
 
 ## Indexes

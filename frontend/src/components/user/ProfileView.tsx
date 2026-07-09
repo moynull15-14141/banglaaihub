@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { isAxiosError } from 'axios';
 import { notFound } from 'next/navigation';
 import { Download, Eye, Folder } from 'lucide-react';
@@ -9,7 +10,10 @@ import { StatCard } from '@/components/common/StatCard';
 import { ResourceGrid } from '@/components/resource/ResourceGrid';
 import { ProfileHeader } from '@/components/user/ProfileHeader';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
 import { usePublicProfile } from '@/lib/hooks/usePublicProfile';
+import type { ResourceType } from '@/types/resource';
 
 interface ProfileViewProps {
   username: string;
@@ -17,6 +21,24 @@ interface ProfileViewProps {
 
 export function ProfileView({ username }: ProfileViewProps) {
   const { data: profile, isLoading, isError, error, refetch } = usePublicProfile(username);
+  const [typeFilter, setTypeFilter] = useState<ResourceType | 'all'>('all');
+
+  // Phase 3B (Part 7 — Author Page) — groups the already-fetched resource
+  // list by type into tabs, purely client-side: profile.resources already
+  // carries `.type` on every item, so no extra request is needed.
+  const resourcesByType = useMemo(() => {
+    const counts = new Map<ResourceType, number>();
+    for (const resource of profile?.resources ?? []) {
+      counts.set(resource.type, (counts.get(resource.type) ?? 0) + 1);
+    }
+    return counts;
+  }, [profile?.resources]);
+
+  const visibleResources = useMemo(() => {
+    if (!profile) return [];
+    if (typeFilter === 'all') return profile.resources;
+    return profile.resources.filter((resource) => resource.type === typeFilter);
+  }, [profile, typeFilter]);
 
   if (isLoading) {
     return (
@@ -71,9 +93,21 @@ export function ProfileView({ username }: ProfileViewProps) {
         <StatCard icon={Eye} label="Views" value={profile.stats.total_views} />
       </div>
 
-      <div>
+      <div className="space-y-4">
         <SectionHeader title="Published resources" />
-        <ResourceGrid resources={profile.resources} isLoading={false} isError={false} />
+        {resourcesByType.size > 1 ? (
+          <Tabs value={typeFilter} onValueChange={(value) => setTypeFilter(value as ResourceType | 'all')}>
+            <TabsList>
+              <TabsTrigger value="all">All ({profile.resources.length})</TabsTrigger>
+              {Array.from(resourcesByType.entries()).map(([type, count]) => (
+                <TabsTrigger key={type} value={type}>
+                  {RESOURCE_TYPE_LABELS[type] ?? type} ({count})
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : null}
+        <ResourceGrid resources={visibleResources} isLoading={false} isError={false} />
       </div>
     </div>
   );

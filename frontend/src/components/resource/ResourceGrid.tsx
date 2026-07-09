@@ -5,6 +5,8 @@ import { ResourceCard } from '@/components/resource/ResourceCard';
 import type { Resource } from '@/types/resource';
 import type { SearchResult } from '@/types/search';
 
+export type ResourceGridView = 'grid' | 'list';
+
 interface ResourceGridProps {
   resources: (Resource | SearchResult)[] | undefined;
   isLoading: boolean;
@@ -18,6 +20,9 @@ interface ResourceGridProps {
   showOwnerActions?: boolean;
   // Bookmarks page only — adds a one-click "Remove" action.
   showBookmarkAction?: boolean;
+  // Phase 3B — 'list' renders a single stacked column instead of a 3-up
+  // grid; ResourceCard itself is unchanged either way.
+  view?: ResourceGridView;
 }
 
 export function ResourceGrid({
@@ -30,6 +35,7 @@ export function ResourceGrid({
   showStatus = false,
   showOwnerActions = false,
   showBookmarkAction = false,
+  view = 'grid',
 }: ResourceGridProps) {
   if (isLoading) {
     return <CardGridSkeleton />;
@@ -50,15 +56,22 @@ export function ResourceGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div
+      className={
+        view === 'list'
+          ? 'flex flex-col gap-4'
+          : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3'
+      }
+    >
       {resources.map((resource) => (
-        <ResourceCard
-          key={resource.id}
-          resource={resource}
-          showStatus={showStatus}
-          showOwnerActions={showOwnerActions}
-          showBookmarkAction={showBookmarkAction}
-        />
+        <div key={resource.id} className={view === 'list' ? 'sm:max-w-md' : undefined}>
+          <ResourceCard
+            resource={resource}
+            showStatus={showStatus}
+            showOwnerActions={showOwnerActions}
+            showBookmarkAction={showBookmarkAction}
+          />
+        </div>
       ))}
     </div>
   );

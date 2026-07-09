@@ -3,19 +3,32 @@ import { Badge } from '@/components/ui/badge';
 import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
 import { resourceHref } from '@/lib/constants/routes';
 import { useResources } from '@/lib/hooks/useResources';
+import { slugify } from '@/lib/utils/slugify';
 import type { ResourceType } from '@/types/resource';
 
 interface SimilarResourcesCardProps {
   type: ResourceType;
   categorySlug: string | undefined;
+  // Phase 3B — narrows "similar" to type + category + tag overlap, using
+  // the same tags filter the browse views use (resourceTags some tag.slug
+  // in [...] on the backend). Slugified client-side, same as TagBadge — the
+  // list() endpoint filters by tag slug, not name.
+  tags: string[];
   excludeSlug: string;
 }
 
 // Reuses the existing public resource listing (filtered to the same
-// type + category, sorted by popularity) rather than a dedicated
-// "similar resources" recommendation endpoint.
-export function SimilarResourcesCard({ type, categorySlug, excludeSlug }: SimilarResourcesCardProps) {
-  const { data } = useResources({ type, category: categorySlug, sort: 'popular', limit: 5 });
+// type + category + overlapping tags, sorted by popularity) rather than a
+// dedicated "similar resources" recommendation endpoint.
+export function SimilarResourcesCard({ type, categorySlug, tags, excludeSlug }: SimilarResourcesCardProps) {
+  const tagSlugs = tags.slice(0, 3).map(slugify);
+  const { data } = useResources({
+    type,
+    category: categorySlug,
+    tags: tagSlugs.length > 0 ? tagSlugs : undefined,
+    sort: 'popular',
+    limit: 5,
+  });
   const similar = (data?.data ?? []).filter((resource) => resource.slug !== excludeSlug).slice(0, 4);
 
   if (similar.length === 0) return null;

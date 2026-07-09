@@ -11,7 +11,15 @@ export type ResourceType =
 export type ResourceLanguage = 'bn' | 'en' | 'both';
 export type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
 export type ResourceVisibility = 'public' | 'unlisted' | 'private';
-export type ResourceSort = 'newest' | 'oldest' | 'popular' | 'downloads' | 'bookmarks';
+export type ResourceSort =
+  | 'newest'
+  | 'oldest'
+  | 'popular'
+  | 'downloads'
+  | 'bookmarks'
+  | 'trending'
+  | 'updated'
+  | 'alpha';
 export type ToolType = 'library' | 'api' | 'model' | 'prompt' | 'tutorial';
 export type ModelFormat =
   | 'gguf'
@@ -48,6 +56,7 @@ export interface ResourceAuthor {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
+  is_verified: boolean;
 }
 
 export interface ResourceCategory {
@@ -312,6 +321,11 @@ export interface ListResourcesParams {
   // Admin-only — see ResourceService.list()'s backend comment. Silently
   // ignored (falls back to live resources) for anyone without resource:delete_any.
   deleted?: true;
+  // Phase 3B filters.
+  license?: string;
+  author?: string;
+  verified?: true;
+  tags?: string[];
   page?: number;
   limit?: number;
 }

@@ -51,6 +51,7 @@ export function Navbar() {
             <SearchBar
               placeholder="Search…"
               onSubmit={(value) => router.push(`${ROUTES.search}?q=${encodeURIComponent(value)}`)}
+              showSuggestions
             />
           </div>
         </div>

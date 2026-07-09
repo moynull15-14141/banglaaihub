@@ -29,7 +29,7 @@ import type { ListResourcesParams, UpdateResourceInput, UploadKind } from '@/typ
 export function useResources(params: ListResourcesParams = {}) {
   return useQuery({
     queryKey: ['resources', params],
-    queryFn: () => listResources(params),
+    queryFn: ({ signal }) => listResources(params, signal),
   });
 }
 

@@ -165,6 +165,7 @@ export const tagsRouter = Router();
 
 tagsRouter.get('/', resourcesController.listTags);
 tagsRouter.get('/search', resourcesController.searchTags);
+tagsRouter.get('/:slug', resourcesController.getTagBySlug);
 tagsRouter.get('/:slug/resources', resourcesController.listTagResources);
 
 export default resourcesRouter;

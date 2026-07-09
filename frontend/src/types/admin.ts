@@ -20,6 +20,13 @@ export interface AdminDashboardStats {
   contributor_applications_rejected_today: number;
 }
 
+// Mirrors SearchService.getSearchAnalyticsSummary() — Phase 3B.
+export interface SearchAnalyticsSummary {
+  total_searches: number;
+  top_queries: { query: string; count: number }[];
+  no_result_queries: { query: string; count: number }[];
+}
+
 export interface AdminUser extends User {
   status: 'active' | 'suspended' | 'banned';
   last_login_at: string | null;

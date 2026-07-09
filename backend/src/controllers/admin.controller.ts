@@ -3,6 +3,7 @@ import { AdminService } from '../services/admin.service';
 import { ContributorApplicationService } from '../services/contributor-application.service';
 import { ReportService } from '../services/report.service';
 import { ResourceService } from '../services/resources.service';
+import { SearchService } from '../services/search.service';
 import { UserService } from '../services/users.service';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/apiResponse';
@@ -244,4 +245,11 @@ export async function listAuditLogs(req: Request, res: Response): Promise<void> 
 export async function getDashboard(_req: Request, res: Response): Promise<void> {
   const stats = await AdminService.getDashboard();
   sendSuccess(res, stats);
+}
+
+// --- Search analytics (Phase 3B) ---------------------------------------------------
+
+export async function getSearchAnalytics(_req: Request, res: Response): Promise<void> {
+  const summary = await SearchService.getSearchAnalyticsSummary();
+  sendSuccess(res, summary);
 }

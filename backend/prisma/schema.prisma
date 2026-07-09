@@ -269,6 +269,7 @@ model User {
   contributorApplications         ContributorApplication[] @relation("ContributorApplicant")
   contributorApplicationsReviewed ContributorApplication[] @relation("ContributorApplicationReviewer")
   uploadedResourceFiles           ResourceFile[]
+  searchLogs                      SearchLog[]
 
   @@index([deletedAt], map: "idx_users_deleted")
   @@map("users")
@@ -712,4 +713,22 @@ model ResourceAnalytics {
   user     User?    @relation(fields: [userId], references: [id])
 
   @@map("resource_analytics")
+}
+
+// Phase 3B — powers "popular searches" and the admin search-analytics view.
+// Fire-and-forget write on every /search call (same best-effort pattern as
+// syncSearchIndex — never blocks or fails the search itself).
+model SearchLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  query       String   @db.VarChar(300)
+  resultCount Int      @map("result_count")
+  filters     Json?    @db.JsonB
+  userId      String?  @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([query], map: "idx_search_logs_query")
+  @@index([createdAt], map: "idx_search_logs_created")
+  @@map("search_logs")
 }

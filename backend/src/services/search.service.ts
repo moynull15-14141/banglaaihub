@@ -31,6 +31,8 @@ export interface SearchDocument {
   author_id: string | null;
   author_name: string | null;
   author_display_name: string | null;
+  // Phase 3B — powers the "verified author" filter.
+  author_is_verified: boolean;
   view_count: number;
   download_count: number;
   bookmark_count: number;
@@ -58,6 +60,7 @@ function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
     author_id: resource.author?.id ?? null,
     author_name: resource.author?.username ?? null,
     author_display_name: resource.author?.displayName ?? null,
+    author_is_verified: resource.author?.isVerified ?? false,
     view_count: resource.viewCount,
     download_count: resource.downloadCount,
     bookmark_count: resource.bookmarkCount,
@@ -78,9 +81,16 @@ function toSearchResultDto(doc: SearchDocument): Record<string, unknown> {
     category: doc.category_id
       ? { id: doc.category_id, name: doc.category_name, slug: doc.category_slug }
       : null,
+    license: doc.license,
+    format: doc.format,
     tags: doc.tags,
     author: doc.author_id
-      ? { id: doc.author_id, username: doc.author_name, display_name: doc.author_display_name }
+      ? {
+          id: doc.author_id,
+          username: doc.author_name,
+          display_name: doc.author_display_name,
+          is_verified: doc.author_is_verified,
+        }
       : null,
     view_count: doc.view_count,
     download_count: doc.download_count,
@@ -99,8 +109,19 @@ function resolveSort(sort?: string): string[] | undefined {
     case 'popular':
       return ['view_count:desc'];
     default:
-      return undefined; // MeiliSearch's own relevance ranking.
+      return undefined; // MeiliSearch's own relevance ranking. "trending" is
+    // deliberately not handled here — it's Prisma-only (see
+    // resources.service.ts), since blending it with MeiliSearch relevance
+    // ranking would need a periodically-synced score field in the index.
   }
+}
+
+// User-supplied values (license/author/tags) are interpolated directly into
+// a MeiliSearch filter expression string — escape quotes/backslashes so a
+// value can never break out of its quoted literal and inject additional
+// filter clauses.
+function escapeFilterValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 export class SearchService {
@@ -108,16 +129,47 @@ export class SearchService {
     return meilisearchClient.index<SearchDocument>(RESOURCES_INDEX_UID);
   }
 
+  // Phase 3B fix — SearchDocument has three fields ending in "id" (id,
+  // author_id, category_id), so MeiliSearch's automatic primary-key
+  // inference fails with index_primary_key_multiple_candidates_found on
+  // first write, silently dropping every document (addDocuments enqueues a
+  // task that fails asynchronously — the HTTP call itself returns success).
+  // Creating the index with an explicit primaryKey up front avoids inference
+  // entirely; index_already_exists is expected and ignored on every call
+  // after the first.
+  private static async ensureIndexExists(): Promise<void> {
+    try {
+      await meilisearchClient.createIndex(RESOURCES_INDEX_UID, { primaryKey: 'id' }).waitTask();
+    } catch (error) {
+      const code = (error as { cause?: { code?: string } } | undefined)?.cause?.code;
+      if (code !== 'index_already_exists') {
+        throw error;
+      }
+    }
+  }
+
   static async configureIndex(): Promise<void> {
+    await this.ensureIndexExists();
     await this.index.updateSettings({
       searchableAttributes: ['title', 'description', 'tags', 'author_name', 'category_name'],
-      filterableAttributes: ['type', 'status', 'language', 'category_id', 'license', 'format'],
+      filterableAttributes: [
+        'type',
+        'status',
+        'language',
+        'category_id',
+        'license',
+        'format',
+        'tags',
+        'author_name',
+        'author_is_verified',
+      ],
       sortableAttributes: [
         'view_count',
         'download_count',
         'bookmark_count',
         'published_at',
         'created_at',
+        'updated_at',
       ],
     });
   }
@@ -132,6 +184,10 @@ export class SearchService {
       return;
     }
 
+    // Realtime indexing (create/update/approve) can run before anyone has
+    // ever called configureIndex() in this environment — ensure the index
+    // (and its primary key) exists rather than relying on inference.
+    await this.ensureIndexExists();
     await this.index.addDocuments([toSearchDocument(resource)]);
   }
 
@@ -140,10 +196,13 @@ export class SearchService {
   }
 
   static async deleteResource(resourceId: string): Promise<void> {
+    await this.ensureIndexExists();
     await this.index.deleteDocument(resourceId);
   }
 
   static async rebuildIndex(): Promise<{ count: number }> {
+    await this.ensureIndexExists();
+
     const resources = await prisma.resource.findMany({
       where: { status: 'approved', deletedAt: null },
       include: resourceInclude,
@@ -160,6 +219,7 @@ export class SearchService {
   static async search(
     query: SearchQuery,
     pagination: PaginationParams,
+    userId?: string,
   ): Promise<{
     data: unknown[];
     meta: { total: number; page: number; limit: number; hasNextPage: boolean };
@@ -167,6 +227,18 @@ export class SearchService {
     const filters: string[] = ['status = approved'];
     if (query.type) filters.push(`type = ${query.type}`);
     if (query.language) filters.push(`language = ${query.language}`);
+    if (query.license) filters.push(`license = "${escapeFilterValue(query.license)}"`);
+    // Exact match on username — a partial/fuzzy author filter would need
+    // author_name in searchableAttributes combined with a second query,
+    // which conflates "search for X" with "filter by author X"; kept as an
+    // exact filter for now, same tradeoff noted in resources.service.ts's
+    // list() (which does a `contains` there, on the Postgres-backed path —
+    // documented inconsistency, not an oversight).
+    if (query.author) filters.push(`author_name = "${escapeFilterValue(query.author)}"`);
+    if (query.verified) filters.push('author_is_verified = true');
+    if (query.tags && query.tags.length > 0) {
+      filters.push(`(${query.tags.map((tag) => `tags = "${escapeFilterValue(tag)}"`).join(' OR ')})`);
+    }
 
     // doc 10's filterableAttributes only includes category_id (not a slug) —
     // the query param is a human-readable slug (per doc 11's example
@@ -196,7 +268,7 @@ export class SearchService {
       hitsPerPage: number;
     };
 
-    return {
+    const result = {
       data: finiteResponse.hits.map(toSearchResultDto),
       meta: {
         total: finiteResponse.totalHits,
@@ -204,6 +276,120 @@ export class SearchService {
         limit: finiteResponse.hitsPerPage,
         hasNextPage: finiteResponse.page * finiteResponse.hitsPerPage < finiteResponse.totalHits,
       },
+    };
+
+    void this.logSearch(query, finiteResponse.totalHits, userId);
+
+    return result;
+  }
+
+  // Lightweight autocomplete — reuses the same index, a small hit count and a
+  // narrow field set (no description/tags needed for a dropdown suggestion).
+  static async suggest(q: string): Promise<{ id: string; slug: string; title: string; type: string }[]> {
+    if (!q.trim()) return [];
+
+    const response = await this.index.search(q, {
+      filter: 'status = approved',
+      limit: 6,
+      attributesToRetrieve: ['id', 'slug', 'title', 'type'],
+    });
+
+    return response.hits.map((hit) => ({
+      id: hit.id,
+      slug: hit.slug,
+      title: hit.title,
+      type: hit.type,
+    }));
+  }
+
+  // Facet distribution for the license filter dropdown — real, currently-in-
+  // use values, not a hardcoded list that drifts from what's actually there.
+  static async getLicenseFacets(): Promise<{ license: string; count: number }[]> {
+    const response = await this.index.search('', {
+      filter: 'status = approved',
+      facets: ['license'],
+      limit: 0,
+    });
+    const distribution = response.facetDistribution?.license ?? {};
+    return Object.entries(distribution)
+      .filter(([license]) => license)
+      .map(([license, count]) => ({ license, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  // Fire-and-forget, same best-effort pattern as syncSearchIndex in
+  // resources.service.ts — a logging failure must never fail the search
+  // request it's attached to.
+  private static async logSearch(query: SearchQuery, resultCount: number, userId?: string): Promise<void> {
+    try {
+      await prisma.searchLog.create({
+        data: {
+          query: query.q.slice(0, 300),
+          resultCount,
+          filters: {
+            type: query.type ?? null,
+            category: query.category ?? null,
+            language: query.language ?? null,
+            license: query.license ?? null,
+            tags: query.tags ?? null,
+            author: query.author ?? null,
+            verified: query.verified ?? null,
+            sort: query.sort ?? null,
+          },
+          userId: userId ?? null,
+        },
+      });
+    } catch {
+      // Best-effort only — never surfaces to the caller.
+    }
+  }
+
+  // Popular searches — query text grouped/counted within a recent window.
+  // The same endpoint also serves "trending searches" via a narrower `days`
+  // value from the caller; not a separate concept or code path.
+  static async getPopularSearches(days = 7, limit = 10): Promise<{ query: string; count: number }[]> {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const grouped = await prisma.searchLog.groupBy({
+      by: ['query'],
+      where: { createdAt: { gte: since }, query: { not: '' } },
+      _count: { _all: true },
+      orderBy: { _count: { query: 'desc' } },
+      take: limit,
+    });
+    return grouped.map((row) => ({ query: row.query, count: row._count._all }));
+  }
+
+  // Admin search-analytics summary — top queries + no-result queries, both
+  // sourced from the same search_logs table.
+  static async getSearchAnalyticsSummary(days = 7): Promise<{
+    total_searches: number;
+    top_queries: { query: string; count: number }[];
+    no_result_queries: { query: string; count: number }[];
+  }> {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const [totalSearches, topQueries, noResultQueries] = await Promise.all([
+      prisma.searchLog.count({ where: { createdAt: { gte: since } } }),
+      prisma.searchLog.groupBy({
+        by: ['query'],
+        where: { createdAt: { gte: since }, query: { not: '' } },
+        _count: { _all: true },
+        orderBy: { _count: { query: 'desc' } },
+        take: 20,
+      }),
+      prisma.searchLog.groupBy({
+        by: ['query'],
+        where: { createdAt: { gte: since }, resultCount: 0, query: { not: '' } },
+        _count: { _all: true },
+        orderBy: { _count: { query: 'desc' } },
+        take: 20,
+      }),
+    ]);
+
+    return {
+      total_searches: totalSearches,
+      top_queries: topQueries.map((row) => ({ query: row.query, count: row._count._all })),
+      no_result_queries: noResultQueries.map((row) => ({ query: row.query, count: row._count._all })),
     };
   }
 }

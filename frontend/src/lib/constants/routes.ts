@@ -23,7 +23,9 @@ export const ROUTES = {
   news: '/news',
   search: '/search',
   userProfile: (username: string) => `/users/${username}`,
+  categories: '/categories',
   category: (slug: string) => `/categories/${slug}`,
+  tag: (slug: string) => `/tags/${slug}`,
   about: '/about',
 
   login: '/login',
@@ -48,6 +50,7 @@ export const ROUTES = {
   adminReports: '/admin/reports',
   adminContributorApplications: '/admin/contributor-applications',
   adminContributorApplication: (id: string) => `/admin/contributor-applications/${id}`,
+  adminSearchAnalytics: '/admin/search-analytics',
 
   terms: '/terms',
   privacy: '/privacy',

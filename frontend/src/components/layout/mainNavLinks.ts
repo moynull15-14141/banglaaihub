@@ -3,6 +3,7 @@ import {
   Boxes,
   Database,
   FileText,
+  Folder,
   FolderKanban,
   Info,
   MessageSquareText,
@@ -15,7 +16,8 @@ import { ROUTES } from '@/lib/constants/routes';
 // All 7 submittable resource types now have a dedicated browse page (Phase
 // 2.3) — previously only dataset/paper/tool did, so tutorial/prompt/project/
 // news were submittable but had no way to browse them by type. `model`
-// added Phase 3A (Model Hub).
+// added Phase 3A (Model Hub). `Categories` added Phase 3B (Discovery System)
+// — the category taxonomy already had per-category pages, just no index.
 export const MAIN_NAV_LINKS = [
   { href: ROUTES.datasets, label: 'Datasets', icon: Database },
   { href: ROUTES.papers, label: 'Papers', icon: FileText },
@@ -25,6 +27,7 @@ export const MAIN_NAV_LINKS = [
   { href: ROUTES.prompts, label: 'Prompts', icon: MessageSquareText },
   { href: ROUTES.projects, label: 'Projects', icon: FolderKanban },
   { href: ROUTES.news, label: 'News', icon: Newspaper },
+  { href: ROUTES.categories, label: 'Categories', icon: Folder },
   { href: ROUTES.search, label: 'Search', icon: Search },
   { href: ROUTES.about, label: 'About', icon: Info },
 ];

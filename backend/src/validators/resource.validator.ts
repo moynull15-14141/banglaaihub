@@ -20,8 +20,28 @@ const RESOURCE_TYPES = [
 ] as const;
 const LANGUAGES = ['bn', 'en', 'both'] as const;
 const RESOURCE_STATUSES = ['pending', 'approved', 'rejected', 'flagged'] as const;
-const SORT_OPTIONS = ['newest', 'oldest', 'popular', 'downloads', 'bookmarks'] as const;
+// Phase 3B — `trending`/`updated`/`alpha` added. `trending` is Prisma-only
+// (resolveTrendingPage in resources.service.ts), not available on the
+// MeiliSearch-backed /search endpoint (see search.validator.ts's own
+// separate, smaller sort enum).
+const SORT_OPTIONS = [
+  'newest',
+  'oldest',
+  'popular',
+  'downloads',
+  'bookmarks',
+  'trending',
+  'updated',
+  'alpha',
+] as const;
 const VISIBILITIES = ['public', 'unlisted', 'private'] as const;
+
+// Comma-separated tag slugs, e.g. `?tags=bangla,llm` — mirrors how tags are
+// already comma-separated everywhere else in this codebase's forms.
+const commaSeparatedTags = z
+  .string()
+  .transform((value) => value.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean))
+  .pipe(z.array(z.string().max(50)).max(10));
 
 export const createResourceSchema = z.object({
   title: z.string().min(5).max(300).trim(),
@@ -58,6 +78,11 @@ export const listResourcesQuerySchema = z.object({
   // lists soft-deleted resources instead of live ones, so an admin with
   // resource:delete_any can find something to restore.
   deleted: z.literal('true').optional(),
+  // Phase 3B filters.
+  license: z.string().max(100).optional(),
+  author: z.string().max(50).optional(),
+  verified: z.literal('true').optional(),
+  tags: commaSeparatedTags.optional(),
 });
 export type ListResourcesQuery = z.infer<typeof listResourcesQuerySchema>;
 
