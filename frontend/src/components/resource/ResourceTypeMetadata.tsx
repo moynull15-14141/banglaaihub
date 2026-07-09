@@ -1,12 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
+import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DownloadButton } from '@/components/resource/DownloadButton';
 import { PdfPreviewDialog } from '@/components/resource/PdfPreviewDialog';
 import { getResourceDownload } from '@/lib/api/resources';
+import { PROMPT_ROLE_OPTIONS } from '@/lib/constants/resourceTypes';
 import { formatBytes, formatNumber } from '@/lib/utils/format';
 import type { Resource } from '@/types/resource';
 
@@ -32,6 +35,14 @@ interface ResourceTypeMetadataProps {
 export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [contentCopied, setContentCopied] = useState(false);
+
+  async function handleCopyPromptContent(content: string) {
+    await navigator.clipboard.writeText(content);
+    setContentCopied(true);
+    toast.success('Prompt copied to clipboard.');
+    setTimeout(() => setContentCopied(false), 2000);
+  }
 
   async function handlePreviewPdf() {
     setPreviewOpen(true);
@@ -140,6 +151,143 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
             </Button>
           ) : null}
         </div>
+      </div>
+    );
+  }
+
+  if (resource.type === 'model' && resource.model) {
+    const { model } = resource;
+    return (
+      <div className="space-y-4">
+        <Card className="px-4">
+          <dl>
+            <MetaRow label="Architecture" value={model.architecture} />
+            <MetaRow label="Base model" value={model.base_model} />
+            <MetaRow label="Format" value={model.format} />
+            <MetaRow label="Quantization" value={model.quantization} />
+            <MetaRow label="Context length" value={model.context_length ? formatNumber(model.context_length) : null} />
+            <MetaRow label="Parameters" value={model.parameters} />
+            <MetaRow label="Precision" value={model.precision} />
+            <MetaRow label="GPU requirement" value={model.gpu_requirement} />
+            <MetaRow label="RAM requirement" value={model.ram_requirement} />
+            <MetaRow label="Version" value={model.version} />
+            <MetaRow label="File size" value={formatBytes(model.file_size_bytes)} />
+          </dl>
+        </Card>
+        {model.benchmark_score && Object.keys(model.benchmark_score).length > 0 ? (
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Benchmark</h3>
+            <Card className="px-4">
+              <dl>
+                {Object.entries(model.benchmark_score).map(([key, value]) => (
+                  <MetaRow key={key} label={key} value={String(value)} />
+                ))}
+              </dl>
+            </Card>
+          </div>
+        ) : null}
+        {model.inference_example ? (
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Inference example</h3>
+            <pre className="overflow-x-auto rounded-lg border border-border/60 bg-muted p-3 text-xs whitespace-pre-wrap">
+              {model.inference_example}
+            </pre>
+          </div>
+        ) : null}
+        {model.changelog ? (
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Changelog</h3>
+            <p className="text-sm whitespace-pre-line text-muted-foreground">{model.changelog}</p>
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {model.file_url ? <DownloadButton slug={resource.slug} label="Download model" size="sm" /> : null}
+          {model.demo_url ? (
+            <Button asChild variant="outline" size="sm">
+              <a href={model.demo_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Try demo
+              </a>
+            </Button>
+          ) : null}
+          {model.repository_url ? (
+            <Button asChild variant="outline" size="sm">
+              <a href={model.repository_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Repository
+              </a>
+            </Button>
+          ) : null}
+          {model.paper_url ? (
+            <Button asChild variant="outline" size="sm">
+              <a href={model.paper_url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Paper
+              </a>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (resource.type === 'prompt' && resource.prompt) {
+    const { prompt } = resource;
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="secondary">{PROMPT_ROLE_OPTIONS.find((o) => o.value === prompt.role)?.label ?? prompt.role}</Badge>
+          {prompt.difficulty ? <Badge variant="outline">{prompt.difficulty}</Badge> : null}
+          {prompt.target_platforms.map((platform) => (
+            <Badge key={platform} variant="outline">
+              {platform}
+            </Badge>
+          ))}
+        </div>
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <h3 className="text-sm font-medium">Prompt content</h3>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCopyPromptContent(prompt.content)}
+            >
+              {contentCopied ? (
+                <Check className="size-4" aria-hidden="true" />
+              ) : (
+                <Copy className="size-4" aria-hidden="true" />
+              )}
+              {contentCopied ? 'Copied' : 'Copy'}
+            </Button>
+          </div>
+          <pre className="overflow-x-auto rounded-lg border border-border/60 bg-muted p-3 text-sm whitespace-pre-wrap">
+            {prompt.content}
+          </pre>
+        </div>
+        {prompt.variables && prompt.variables.length > 0 ? (
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Variables</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {prompt.variables.map((variable) => (
+                <Badge key={variable.name} variant="secondary">
+                  {variable.name}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {prompt.example_output ? (
+          <div>
+            <h3 className="mb-1 text-sm font-medium">Example output</h3>
+            <p className="text-sm whitespace-pre-line text-muted-foreground">{prompt.example_output}</p>
+          </div>
+        ) : null}
+        <Card className="px-4">
+          <dl>
+            <MetaRow label="Version" value={prompt.version} />
+          </dl>
+        </Card>
       </div>
     );
   }

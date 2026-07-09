@@ -133,8 +133,8 @@ export const CONTRIBUTOR_SUPPORTING_ALLOWED_EXTENSIONS = [
 ];
 export const CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE = 20 * 1024 * 1024;
 
-// Exposed for future model upload flows — not wired to any route yet, kept
-// here so a new flow reuses these instead of inventing its own list.
+// Model weight file upload (`kind=model`, Phase 3A Model Hub) — mirrors the
+// dataset/tool single-slot upload pattern exactly.
 export const MODEL_ALLOWED_EXTENSIONS = ['.onnx', '.gguf', '.safetensors', '.pt', '.bin'];
 export const MODEL_MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 
@@ -169,6 +169,9 @@ export const RESOURCE_ATTACHMENT_EXTENSIONS_BY_TYPE: Record<string, string[]> = 
   prompt: ['.txt', '.json', '.md', '.pdf'],
   project: ['.zip', '.pdf', '.docx', '.pptx'],
   news: ['.pdf', '.jpg', '.jpeg', '.png'],
+  // Secondary model files (tokenizer/config/etc.) alongside the primary
+  // weight file, which uses the single-slot `kind=model` upload instead.
+  model: ['.json', '.txt', '.md', '.safetensors', '.gguf'],
 };
 
 export const RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE: Record<string, number> = {
@@ -179,6 +182,7 @@ export const RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE: Record<string, number> =
   prompt: 10 * 1024 * 1024,
   project: 200 * 1024 * 1024,
   news: 20 * 1024 * 1024,
+  model: MODEL_MAX_FILE_SIZE,
 };
 
 // Union of every per-type list — the loosest possible allow-list, used by
@@ -512,6 +516,20 @@ export class StorageService {
       TOOL_ASSET_MAX_FILE_SIZE,
     );
     return { key: metadata.key, checksum: metadata.checksum, size: metadata.size };
+  }
+
+  static async uploadModelFile(
+    resourceId: string,
+    file: UploadedFile,
+  ): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.uploadObject(
+      STORAGE_FOLDERS.models,
+      resourceId,
+      file,
+      MODEL_ALLOWED_EXTENSIONS,
+      MODEL_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
   }
 
   static async uploadDocumentation(

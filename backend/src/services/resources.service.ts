@@ -31,6 +31,8 @@ export const resourceInclude = {
   dataset: true,
   paper: true,
   tool: true,
+  model: true,
+  prompt: true,
   files: { orderBy: { sortOrder: 'asc' } },
 } satisfies Prisma.ResourceInclude;
 
@@ -48,6 +50,7 @@ const MODERATION_PERMISSIONS = ['resource:approve', 'resource:edit_any'];
 // doc, so they intentionally award nothing rather than guessing a number.
 const RESOURCE_APPROVAL_POINTS: Partial<Record<string, number>> = {
   dataset: 50,
+  model: 40,
   paper: 30,
   tutorial: 20,
   tool: 20,
@@ -66,12 +69,16 @@ function resourceLink(type: string, slug: string): string {
       return `/papers/${slug}`;
     case 'tool':
       return `/tools/${slug}`;
+    case 'model':
+      return `/models/${slug}`;
+    case 'prompt':
+      return `/prompts/${slug}`;
     default:
       return `/resources/${slug}`;
   }
 }
 
-export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation';
+export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation' | 'model';
 
 // thumbnail_url/documentation_url/paper.pdf_url can each be either a
 // user-pasted external URL or a previously-uploaded R2 key (see
@@ -107,14 +114,16 @@ async function toResourceFileDto(file: ResourceWithRelations['files'][number]): 
 // (resolved to a short-lived signed URL, exactly like avatars already do via
 // StorageService.resolveUrl) — the raw key itself is never returned.
 export async function toResourceDto(resource: ResourceWithRelations): Promise<Record<string, unknown>> {
-  const [thumbnailUrl, documentationUrl, datasetFileUrl, paperPdfUrl, toolFileUrl, attachments] = await Promise.all([
-    StorageService.resolveUrl(resource.thumbnailUrl),
-    StorageService.resolveUrl(resource.documentationUrl),
-    resource.dataset ? StorageService.resolveUrl(resource.dataset.fileUrl) : null,
-    resource.paper ? StorageService.resolveUrl(resource.paper.pdfUrl) : null,
-    resource.tool ? StorageService.resolveUrl(resource.tool.fileUrl) : null,
-    Promise.all(resource.files.map(toResourceFileDto)),
-  ]);
+  const [thumbnailUrl, documentationUrl, datasetFileUrl, paperPdfUrl, toolFileUrl, modelFileUrl, attachments] =
+    await Promise.all([
+      StorageService.resolveUrl(resource.thumbnailUrl),
+      StorageService.resolveUrl(resource.documentationUrl),
+      resource.dataset ? StorageService.resolveUrl(resource.dataset.fileUrl) : null,
+      resource.paper ? StorageService.resolveUrl(resource.paper.pdfUrl) : null,
+      resource.tool ? StorageService.resolveUrl(resource.tool.fileUrl) : null,
+      resource.model ? StorageService.resolveUrl(resource.model.fileUrl) : null,
+      Promise.all(resource.files.map(toResourceFileDto)),
+    ]);
 
   return {
     id: resource.id,
@@ -195,6 +204,42 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
           file_url: toolFileUrl,
           file_size_bytes: resource.tool.fileSizeBytes?.toString() ?? null,
           checksum_sha256: resource.tool.checksumSha256,
+        }
+      : null,
+    model: resource.model
+      ? {
+          architecture: resource.model.architecture,
+          base_model: resource.model.baseModel,
+          format: resource.model.format,
+          quantization: resource.model.quantization,
+          context_length: resource.model.contextLength,
+          parameters: resource.model.parameters,
+          precision: resource.model.precision,
+          gpu_requirement: resource.model.gpuRequirement,
+          ram_requirement: resource.model.ramRequirement,
+          benchmark_score: resource.model.benchmarkScore,
+          inference_example: resource.model.inferenceExample,
+          version: resource.model.version,
+          changelog: resource.model.changelog,
+          demo_url: resource.model.demoUrl,
+          repository_url: resource.model.repositoryUrl,
+          paper_url: resource.model.paperUrl,
+          file_url: modelFileUrl,
+          file_size_bytes: resource.model.fileSizeBytes?.toString() ?? null,
+          checksum_sha256: resource.model.checksumSha256,
+          parent_id: resource.model.parentId,
+        }
+      : null,
+    prompt: resource.prompt
+      ? {
+          role: resource.prompt.role,
+          content: resource.prompt.content,
+          target_platforms: resource.prompt.targetPlatforms,
+          variables: resource.prompt.variables,
+          difficulty: resource.prompt.difficulty,
+          example_output: resource.prompt.exampleOutput,
+          version: resource.prompt.version,
+          parent_id: resource.prompt.parentId,
         }
       : null,
   };
@@ -457,7 +502,7 @@ export class ResourceService {
   ): Promise<{ url: string; filename: string; size_bytes: string | null }> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true, paper: true, tool: true, files: true },
+      include: { dataset: true, paper: true, tool: true, model: true, files: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
@@ -481,7 +526,9 @@ export class ResourceService {
           ? (resource.tool?.fileUrl ?? null)
           : resource.type === 'paper'
             ? (resource.paper?.pdfUrl ?? null)
-            : null;
+            : resource.type === 'model'
+              ? (resource.model?.fileUrl ?? null)
+              : null;
 
     if (!key) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'This resource has no downloadable file.');
@@ -492,7 +539,9 @@ export class ResourceService {
         ? (resource.dataset?.fileSizeBytes?.toString() ?? null)
         : resource.type === 'tool'
           ? (resource.tool?.fileSizeBytes?.toString() ?? null)
-          : null;
+          : resource.type === 'model'
+            ? (resource.model?.fileSizeBytes?.toString() ?? null)
+            : null;
     // Legacy single-slot fields never stored the original filename — best
     // effort synthesis from the resource's own slug + the key's real
     // extension (the key always ends in it, see StorageService.uploadObject).
@@ -655,6 +704,73 @@ export class ResourceService {
         });
       }
 
+      if (input.type === 'model') {
+        let parentId: string | null = null;
+
+        if (input.model?.parent_model_slug) {
+          const parentResource = await tx.resource.findUnique({
+            where: { slug: input.model.parent_model_slug },
+            include: { model: true },
+          });
+          if (!parentResource?.model) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Parent model not found.');
+          }
+          parentId = parentResource.model.id;
+        }
+
+        await tx.model.create({
+          data: {
+            resourceId: resource.id,
+            architecture: input.model?.architecture ?? null,
+            baseModel: input.model?.base_model ?? null,
+            format: input.model?.format ?? null,
+            quantization: input.model?.quantization ?? null,
+            contextLength: input.model?.context_length ?? null,
+            parameters: input.model?.parameters ?? null,
+            precision: input.model?.precision ?? null,
+            gpuRequirement: input.model?.gpu_requirement ?? null,
+            ramRequirement: input.model?.ram_requirement ?? null,
+            benchmarkScore: (input.model?.benchmark_score as Prisma.InputJsonValue | undefined) ?? undefined,
+            inferenceExample: input.model?.inference_example ?? null,
+            version: input.model?.version ?? 'v1.0',
+            changelog: input.model?.changelog ?? null,
+            demoUrl: input.model?.demo_url ?? null,
+            repositoryUrl: input.model?.repository_url ?? null,
+            paperUrl: input.model?.paper_url ?? null,
+            parentId,
+          },
+        });
+      }
+
+      if (input.type === 'prompt') {
+        let parentId: string | null = null;
+
+        if (input.prompt?.parent_prompt_slug) {
+          const parentResource = await tx.resource.findUnique({
+            where: { slug: input.prompt.parent_prompt_slug },
+            include: { prompt: true },
+          });
+          if (!parentResource?.prompt) {
+            throw new ApiError(400, 'VALIDATION_ERROR', 'Parent prompt not found.');
+          }
+          parentId = parentResource.prompt.id;
+        }
+
+        await tx.prompt.create({
+          data: {
+            resourceId: resource.id,
+            role: input.prompt?.role ?? 'user',
+            content: input.prompt?.content ?? '',
+            targetPlatforms: input.prompt?.target_platforms ?? [],
+            variables: input.prompt?.variables ?? undefined,
+            difficulty: input.prompt?.difficulty ?? null,
+            exampleOutput: input.prompt?.example_output ?? null,
+            version: input.prompt?.version ?? 'v1.0',
+            parentId,
+          },
+        });
+      }
+
       if (input.tags && input.tags.length > 0) {
         await linkTags(tx, resource.id, input.tags);
       }
@@ -766,6 +882,45 @@ export class ResourceService {
         });
       }
 
+      if (input.model && resource.type === 'model') {
+        await tx.model.update({
+          where: { resourceId: resource.id },
+          data: {
+            architecture: input.model.architecture,
+            baseModel: input.model.base_model,
+            format: input.model.format,
+            quantization: input.model.quantization,
+            contextLength: input.model.context_length,
+            parameters: input.model.parameters,
+            precision: input.model.precision,
+            gpuRequirement: input.model.gpu_requirement,
+            ramRequirement: input.model.ram_requirement,
+            benchmarkScore: input.model.benchmark_score as Prisma.InputJsonValue | undefined,
+            inferenceExample: input.model.inference_example,
+            version: input.model.version,
+            changelog: input.model.changelog,
+            demoUrl: input.model.demo_url,
+            repositoryUrl: input.model.repository_url,
+            paperUrl: input.model.paper_url,
+          },
+        });
+      }
+
+      if (input.prompt && resource.type === 'prompt') {
+        await tx.prompt.update({
+          where: { resourceId: resource.id },
+          data: {
+            role: input.prompt.role,
+            content: input.prompt.content,
+            targetPlatforms: input.prompt.target_platforms,
+            variables: input.prompt.variables,
+            difficulty: input.prompt.difficulty,
+            exampleOutput: input.prompt.example_output,
+            version: input.prompt.version,
+          },
+        });
+      }
+
       if (input.tags) {
         await tx.resourceTag.deleteMany({ where: { resourceId: resource.id } });
         await linkTags(tx, resource.id, input.tags);
@@ -791,6 +946,197 @@ export class ResourceService {
     return toResourceDto(await this.getResourceWithRelations(resource.id));
   }
 
+  // Phase 3A.1 — Prompt Fork. Deliberately does NOT duplicate any of create()'s
+  // slug/transaction/tag-linking/audit-log/search-sync logic: it builds a
+  // CreateResourceInput copying the source prompt's fields (with
+  // parent_prompt_slug set to the source) and calls this.create() directly,
+  // exactly the same reuse pattern datasets already use for
+  // parent_dataset_slug. Prompt-only — Model has no "fork" concept, only
+  // version history (see getVersionChain below).
+  static async fork(
+    slug: string,
+    requester: AccessTokenPayload,
+  ): Promise<{ id: string; slug: string; status: string; message: string }> {
+    const resource = await prisma.resource.findUnique({
+      where: { slug },
+      include: { prompt: true, resourceTags: { include: { tag: true } } },
+    });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+    if (resource.type !== 'prompt' || !resource.prompt) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Only prompt resources can be forked.');
+    }
+    if (resource.status !== 'approved') {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Only approved prompts can be forked.');
+    }
+    await this.assertCanView(resource, requester);
+
+    const input: CreateResourceInput = {
+      title: `${resource.title} (Fork)`.slice(0, 300),
+      description: resource.description ?? undefined,
+      type: 'prompt',
+      category_id: resource.categoryId ?? undefined,
+      tags: resource.resourceTags.map((rt) => rt.tag.name),
+      language: resource.language as CreateResourceInput['language'],
+      license: resource.license ?? undefined,
+      prompt: {
+        role: resource.prompt.role,
+        content: resource.prompt.content,
+        target_platforms: resource.prompt.targetPlatforms,
+        variables: resource.prompt.variables
+          ? (resource.prompt.variables as unknown as NonNullable<CreateResourceInput['prompt']>['variables'])
+          : undefined,
+        difficulty: resource.prompt.difficulty ?? undefined,
+        version: 'v1.0',
+        parent_prompt_slug: resource.slug,
+      },
+    };
+
+    const created = await this.create(requester.userId, input);
+
+    await writeAuditLog({
+      actorId: requester.userId,
+      action: 'resource.fork',
+      targetType: 'resource',
+      targetId: created.id,
+      newValue: { forkedFrom: resource.id, slug: created.slug },
+    });
+
+    return { ...created, message: 'Prompt forked successfully.' };
+  }
+
+  // Phase 3A.1 — Version History. Model/Prompt each have a shallow
+  // self-referential parentId (see schema) — this walks that chain (bounded,
+  // same defensive-hop-limit pattern as wouldCreateCycle above) rather than
+  // introducing any new table or a branching tree browser. Read-only; no
+  // merge/compare concept exists.
+  static async getVersionChain(slug: string, requester?: AccessTokenPayload): Promise<unknown[]> {
+    const resource = await prisma.resource.findUnique({
+      where: { slug },
+      include: { model: true, prompt: true },
+    });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+    await this.assertCanView(resource, requester);
+
+    if (resource.type !== 'model' && resource.type !== 'prompt') {
+      return [];
+    }
+
+    const chainRefs = await this.collectVersionChainRefs(resource);
+    if (chainRefs.length <= 1) return [];
+
+    const resources = await prisma.resource.findMany({
+      where: { id: { in: chainRefs.map((ref) => ref.resourceId) }, deletedAt: null },
+      include: {
+        author: { select: { id: true, username: true, displayName: true } },
+        model: { select: { version: true } },
+        prompt: { select: { version: true } },
+      },
+    });
+    const byId = new Map(resources.map((r) => [r.id, r]));
+
+    let canModerate = false;
+    if (requester) {
+      const permissions = await AuthService.getUserPermissions(requester.userId);
+      canModerate = MODERATION_PERMISSIONS.some((permission) => permissions.has(permission));
+    }
+
+    // Pending/private entries in the chain are silently dropped (not just for
+    // the current resource — assertCanView above only guards that one) unless
+    // the requester owns them or can moderate, per Part 7: "pending resources
+    // must never appear publicly."
+    const visible = chainRefs
+      .map((ref) => byId.get(ref.resourceId))
+      .filter((r): r is NonNullable<typeof r> => {
+        if (!r) return false;
+        const isOwner = requester?.userId === r.authorId;
+        if (isOwner || canModerate) return true;
+        return r.status === 'approved' && r.visibility === 'public';
+      });
+
+    if (visible.length <= 1) return [];
+
+    return visible.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      type: r.type,
+      version: r.model?.version ?? r.prompt?.version ?? null,
+      author: r.author ? { username: r.author.username, display_name: r.author.displayName } : null,
+      status: r.status,
+      published_at: r.publishedAt,
+      is_current: r.id === resource.id,
+    }));
+  }
+
+  // Walks up to the chain's root via parentId, then back down following the
+  // earliest-created child at each level — a single deterministic path, never
+  // a full tree (Part 2/3: "only browsing," no merge/compare). Bounded to 25
+  // hops each direction; a real chain will never approach that depth.
+  private static async collectVersionChainRefs(resource: {
+    id: string;
+    type: string;
+    model: { id: string; parentId: string | null } | null;
+    prompt: { id: string; parentId: string | null } | null;
+  }): Promise<{ typeRowId: string; resourceId: string }[]> {
+    const isModel = resource.type === 'model';
+    const startRow = isModel ? resource.model : resource.prompt;
+    if (!startRow) return [];
+
+    const MAX_HOPS = 25;
+    type ChainRow = { id: string; parentId: string | null; resourceId: string };
+
+    const ancestors: ChainRow[] = [];
+    let currentParentId = startRow.parentId;
+    let hops = 0;
+    while (currentParentId && hops < MAX_HOPS) {
+      const parentRow = isModel
+        ? await prisma.model.findUnique({
+            where: { id: currentParentId },
+            select: { id: true, parentId: true, resourceId: true },
+          })
+        : await prisma.prompt.findUnique({
+            where: { id: currentParentId },
+            select: { id: true, parentId: true, resourceId: true },
+          });
+      if (!parentRow) break;
+      ancestors.push(parentRow);
+      currentParentId = parentRow.parentId;
+      hops += 1;
+    }
+    ancestors.reverse();
+
+    const descendants: { id: string; resourceId: string }[] = [];
+    let currentId = startRow.id;
+    hops = 0;
+    while (hops < MAX_HOPS) {
+      const child = isModel
+        ? await prisma.model.findFirst({
+            where: { parentId: currentId },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, resourceId: true },
+          })
+        : await prisma.prompt.findFirst({
+            where: { parentId: currentId },
+            orderBy: { createdAt: 'asc' },
+            select: { id: true, resourceId: true },
+          });
+      if (!child) break;
+      descendants.push(child);
+      currentId = child.id;
+      hops += 1;
+    }
+
+    return [
+      ...ancestors.map((a) => ({ typeRowId: a.id, resourceId: a.resourceId })),
+      { typeRowId: startRow.id, resourceId: resource.id },
+      ...descendants.map((d) => ({ typeRowId: d.id, resourceId: d.resourceId })),
+    ];
+  }
+
   // Delete policy (Part 7): pending/rejected are hard-deleted immediately
   // (nothing worth keeping a moderation trail for); approved resources are
   // soft-deleted (deletedAt, restorable) since they were public and may need
@@ -803,7 +1149,7 @@ export class ResourceService {
   ): Promise<void> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true, paper: true, tool: true, files: true },
+      include: { dataset: true, paper: true, tool: true, model: true, files: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
@@ -827,13 +1173,15 @@ export class ResourceService {
         resource.dataset?.fileUrl ?? null,
         objectKeyOrNull(resource.paper?.pdfUrl ?? null),
         resource.tool?.fileUrl ?? null,
+        resource.model?.fileUrl ?? null,
         ...resource.files.map((file) => file.storageKey),
       ];
 
-      // DB-level FK actions handle the rest: Dataset/Paper/Tool/ResourceFile/
-      // ResourceTag/Bookmark/Comment are all ON DELETE CASCADE (removed with
-      // the resource); Report.resource_id and ReputationEvent.resource_id are
-      // ON DELETE SET NULL (that history is preserved, just unlinked).
+      // DB-level FK actions handle the rest: Dataset/Paper/Tool/Model/Prompt/
+      // ResourceFile/ResourceTag/Bookmark/Comment are all ON DELETE CASCADE
+      // (removed with the resource); Report.resource_id and
+      // ReputationEvent.resource_id are ON DELETE SET NULL (that history is
+      // preserved, just unlinked).
       await prisma.resource.delete({ where: { id: resource.id } });
 
       await Promise.all(keys.map((key) => StorageService.deleteObject(key).catch(() => {})));
@@ -1044,7 +1392,7 @@ export class ResourceService {
   ): Promise<{ file_url: string }> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true, paper: true, tool: true },
+      include: { dataset: true, paper: true, tool: true, model: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
@@ -1098,6 +1446,20 @@ export class ResourceService {
         const uploaded = await StorageService.uploadToolAsset(resource.id, file);
         key = uploaded.key;
         await prisma.tool.update({
+          where: { resourceId: resource.id },
+          data: { fileUrl: key, fileSizeBytes: BigInt(file.size), checksumSha256: uploaded.checksum },
+        });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+      case 'model': {
+        if (resource.type !== 'model' || !resource.model) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Only model resources support model file uploads.');
+        }
+        const previousKey = resource.model.fileUrl;
+        const uploaded = await StorageService.uploadModelFile(resource.id, file);
+        key = uploaded.key;
+        await prisma.model.update({
           where: { resourceId: resource.id },
           data: { fileUrl: key, fileSizeBytes: BigInt(file.size), checksumSha256: uploaded.checksum },
         });

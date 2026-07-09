@@ -9,8 +9,10 @@ import {
   createResource,
   deleteResource,
   deleteResourceAttachment,
+  forkResource,
   getResourceBySlug,
   getResourceDownload,
+  getResourceVersions,
   listResources,
   logResourceShare,
   removeResourceBookmark,
@@ -75,6 +77,30 @@ export function useUploadResourceFile() {
 
 export function useLogResourceShare() {
   return useMutation({ mutationFn: logResourceShare });
+}
+
+// Phase 3A.1 — mirrors useCreateResource()'s invalidation exactly (a fork IS
+// a create, just pre-filled server-side).
+export function useForkResource() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: forkResource,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users', 'me', 'submissions'] });
+    },
+  });
+}
+
+// Phase 3A.1 — only enabled for model/prompt detail views (see
+// VersionHistorySection), so no extra request fires for other resource
+// types. Shared by both the Version History card and the Prev/Next nav —
+// one fetch, cached by slug like every other resource query here.
+export function useResourceVersions(slug: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['resources', 'versions', slug],
+    queryFn: () => getResourceVersions(slug),
+    enabled: enabled && Boolean(slug),
+  });
 }
 
 // Invalidates both the detail view and the owner's "My submissions" list —

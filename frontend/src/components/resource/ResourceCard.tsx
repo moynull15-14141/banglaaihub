@@ -11,7 +11,7 @@ import { ResourceMeta } from '@/components/resource/ResourceMeta';
 import { TagBadge } from '@/components/resource/TagBadge';
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
-import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
+import { RESOURCE_TYPE_LABELS, STATUS_BADGE_VARIANT, STATUS_LABEL } from '@/lib/constants/resourceTypes';
 import { useDeleteResource, useToggleResourceBookmark } from '@/lib/hooks/useResources';
 import { getFileBadgeLabel } from '@/lib/utils/fileIcons';
 import { formatBytes, formatDate, truncate } from '@/lib/utils/format';
@@ -26,20 +26,6 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 const VISIBILITY_ICON = { public: null, unlisted: Unlock, private: Lock } as const;
-
-const STATUS_BADGE_VARIANT: Record<string, 'warning' | 'success' | 'destructive' | 'secondary'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'destructive',
-  flagged: 'destructive',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Pending review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  flagged: 'Flagged',
-};
 
 interface ResourceCardProps {
   resource: Resource | SearchResult;

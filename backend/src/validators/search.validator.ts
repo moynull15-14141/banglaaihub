@@ -9,6 +9,7 @@ const RESOURCE_TYPES = [
   'prompt',
   'project',
   'news',
+  'model',
 ] as const;
 const LANGUAGES = ['bn', 'en', 'both'] as const;
 // doc 11's search sort vocabulary — a smaller, distinct set from the

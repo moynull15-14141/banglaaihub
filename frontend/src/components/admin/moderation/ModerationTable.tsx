@@ -24,6 +24,7 @@ const TYPE_LABELS: Record<string, string> = {
   prompt: 'Prompt',
   project: 'Project',
   news: 'News',
+  model: 'Model',
 };
 
 export interface ModerationRowActions {

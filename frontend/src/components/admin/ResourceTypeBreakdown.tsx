@@ -1,4 +1,4 @@
-import { BookOpen, Database, FileText, Folder, MessageSquare, Newspaper, Wrench } from 'lucide-react';
+import { BookOpen, Boxes, Database, FileText, Folder, MessageSquare, Newspaper, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -14,6 +14,7 @@ const TYPE_LABELS: Record<string, string> = {
   prompt: 'Prompts',
   project: 'Projects',
   news: 'News',
+  model: 'Models',
 };
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
@@ -24,6 +25,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   prompt: MessageSquare,
   project: Folder,
   news: Newspaper,
+  model: Boxes,
 };
 
 // A single hue, ordered by magnitude with direct value labels — this is a

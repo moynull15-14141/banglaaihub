@@ -358,6 +358,7 @@ export async function sendSubmissionApproved({ userEmail, userName, resourceTitl
 | Action | Points | Notes |
 |--------|--------|-------|
 | Dataset approved | +50 | One-time, per dataset |
+| Model approved | +40 | One-time, per model (Phase 3A) |
 | Research paper approved | +30 | One-time, per paper |
 | Tutorial/tool approved | +20 | One-time |
 | Prompt approved | +10 | One-time |

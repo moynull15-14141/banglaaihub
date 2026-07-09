@@ -10,6 +10,8 @@ import {
   DATASET_ALLOWED_EXTENSIONS,
   DATASET_MAX_FILE_SIZE,
   DOCUMENTATION_ALLOWED_EXTENSIONS,
+  MODEL_ALLOWED_EXTENSIONS,
+  MODEL_MAX_FILE_SIZE,
   PAPER_PDF_ALLOWED_EXTENSIONS,
   RESOURCE_ATTACHMENT_ALLOWED_EXTENSIONS,
   RESOURCE_ATTACHMENT_MAX_FILE_SIZE,
@@ -44,8 +46,8 @@ function createUploadMiddleware(allowedExtensions: string[], maxFileSize: number
 // allow-list actually applies) is a query param read after this middleware
 // runs, so the narrower per-kind list + size limit is enforced
 // authoritatively inside ResourceService.uploadFile() instead. The size
-// limit here is the loosest of the five (dataset's) — each kind's tighter
-// limit is enforced server-side in StorageService.uploadObject().
+// limit here is the loosest of the six (model's, at 2GB) — each kind's
+// tighter limit is enforced server-side in StorageService.uploadObject().
 const RESOURCE_UPLOAD_EXTENSIONS = Array.from(
   new Set([
     ...DATASET_ALLOWED_EXTENSIONS,
@@ -53,12 +55,13 @@ const RESOURCE_UPLOAD_EXTENSIONS = Array.from(
     ...PAPER_PDF_ALLOWED_EXTENSIONS,
     ...TOOL_ASSET_ALLOWED_EXTENSIONS,
     ...DOCUMENTATION_ALLOWED_EXTENSIONS,
+    ...MODEL_ALLOWED_EXTENSIONS,
   ]),
 );
 
 export const resourceUpload = createUploadMiddleware(
   RESOURCE_UPLOAD_EXTENSIONS,
-  Math.max(DATASET_MAX_FILE_SIZE, TOOL_ASSET_MAX_FILE_SIZE),
+  Math.max(DATASET_MAX_FILE_SIZE, TOOL_ASSET_MAX_FILE_SIZE, MODEL_MAX_FILE_SIZE),
 );
 
 export const avatarUpload = createUploadMiddleware(AVATAR_ALLOWED_EXTENSIONS, AVATAR_MAX_FILE_SIZE);

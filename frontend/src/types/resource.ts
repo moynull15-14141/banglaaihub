@@ -5,13 +5,26 @@ export type ResourceType =
   | 'tutorial'
   | 'prompt'
   | 'project'
-  | 'news';
+  | 'news'
+  | 'model';
 
 export type ResourceLanguage = 'bn' | 'en' | 'both';
 export type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
 export type ResourceVisibility = 'public' | 'unlisted' | 'private';
 export type ResourceSort = 'newest' | 'oldest' | 'popular' | 'downloads' | 'bookmarks';
 export type ToolType = 'library' | 'api' | 'model' | 'prompt' | 'tutorial';
+export type ModelFormat =
+  | 'gguf'
+  | 'safetensors'
+  | 'onnx'
+  | 'pytorch'
+  | 'tensorflow'
+  | 'mlx'
+  | 'lora'
+  | 'adapter'
+  | 'other';
+export type PromptRole = 'system' | 'developer' | 'user';
+export type PromptDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
 // A ResourceFile row (Phase 2.3) — a universal, multi-file attachment,
 // separate from (and additional to) each type's single-slot field
@@ -86,6 +99,46 @@ export interface ToolMetadata {
   checksum_sha256: string | null;
 }
 
+export interface ModelMetadata {
+  architecture: string | null;
+  base_model: string | null;
+  format: ModelFormat | null;
+  quantization: string | null;
+  context_length: number | null;
+  parameters: string | null;
+  precision: string | null;
+  gpu_requirement: string | null;
+  ram_requirement: string | null;
+  benchmark_score: Record<string, unknown> | null;
+  inference_example: string | null;
+  version: string;
+  changelog: string | null;
+  demo_url: string | null;
+  repository_url: string | null;
+  paper_url: string | null;
+  file_url: string | null;
+  file_size_bytes: string | null;
+  checksum_sha256: string | null;
+  parent_id: string | null;
+}
+
+export interface PromptVariable {
+  name: string;
+  description?: string;
+  default_value?: string;
+}
+
+export interface PromptMetadata {
+  role: PromptRole;
+  content: string;
+  target_platforms: string[];
+  variables: PromptVariable[] | null;
+  difficulty: PromptDifficulty | null;
+  example_output: string | null;
+  version: string;
+  parent_id: string | null;
+}
+
 export interface Resource {
   id: string;
   slug: string;
@@ -126,6 +179,8 @@ export interface Resource {
   dataset: DatasetMetadata | null;
   paper: PaperMetadata | null;
   tool: ToolMetadata | null;
+  model: ModelMetadata | null;
+  prompt: PromptMetadata | null;
 }
 
 // Mirrors backend/src/validators/dataset.validator.ts's datasetInputSchema —
@@ -163,6 +218,39 @@ export interface ToolInput {
   install_command?: string;
 }
 
+// Mirrors backend/src/validators/model.validator.ts's modelInputSchema.
+export interface ModelInput {
+  architecture?: string;
+  base_model?: string;
+  format?: ModelFormat;
+  quantization?: string;
+  context_length?: number;
+  parameters?: string;
+  precision?: string;
+  gpu_requirement?: string;
+  ram_requirement?: string;
+  benchmark_score?: Record<string, unknown>;
+  inference_example?: string;
+  version?: string;
+  changelog?: string;
+  demo_url?: string;
+  repository_url?: string;
+  paper_url?: string;
+  parent_model_slug?: string;
+}
+
+// Mirrors backend/src/validators/prompt.validator.ts's promptInputSchema.
+export interface PromptInput {
+  role?: PromptRole;
+  content?: string;
+  target_platforms?: string[];
+  variables?: PromptVariable[];
+  difficulty?: PromptDifficulty;
+  example_output?: string;
+  version?: string;
+  parent_prompt_slug?: string;
+}
+
 // Mirrors backend/src/validators/resource.validator.ts's createResourceSchema.
 export interface CreateResourceInput {
   title: string;
@@ -178,6 +266,8 @@ export interface CreateResourceInput {
   dataset?: DatasetInput;
   paper?: PaperInput;
   tool?: ToolInput;
+  model?: ModelInput;
+  prompt?: PromptInput;
 }
 
 // Mirrors backend/src/validators/resource.validator.ts's updateResourceSchema
@@ -186,13 +276,27 @@ export interface CreateResourceInput {
 export type UpdateResourceInput = Partial<CreateResourceInput>;
 
 // Mirrors backend/src/services/resources.service.ts's UploadKind.
-export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation';
+export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation' | 'model';
 
 export interface CreateResourceResult {
   id: string;
   slug: string;
   status: ResourceStatus;
   message: string;
+}
+
+// Mirrors backend/src/services/resources.service.ts's getVersionChain() DTO
+// (Phase 3A.1) — one entry per resource in the version chain, oldest first.
+export interface ResourceVersionEntry {
+  id: string;
+  slug: string;
+  title: string;
+  type: ResourceType;
+  version: string | null;
+  author: { username: string; display_name: string | null } | null;
+  status: ResourceStatus;
+  published_at: string | null;
+  is_current: boolean;
 }
 
 export interface ListResourcesParams {

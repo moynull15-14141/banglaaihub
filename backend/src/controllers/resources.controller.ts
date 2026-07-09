@@ -105,6 +105,19 @@ export async function share(req: Request, res: Response): Promise<void> {
   sendSuccess(res, { message: 'Share recorded.' });
 }
 
+// Phase 3A.1 — Prompt Fork / Version History.
+
+export async function fork(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const result = await ResourceService.fork(requireParam(req, 'slug'), user);
+  sendSuccess(res, result, undefined, 201);
+}
+
+export async function getVersions(req: Request, res: Response): Promise<void> {
+  const chain = await ResourceService.getVersionChain(requireParam(req, 'slug'), req.user);
+  sendSuccess(res, chain);
+}
+
 // --- Attachments (ResourceFile) ---------------------------------------------
 
 export async function addAttachment(req: Request, res: Response): Promise<void> {

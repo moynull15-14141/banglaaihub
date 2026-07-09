@@ -31,9 +31,12 @@ import {
 import { getFileIcon, getFileBadgeLabel } from '@/lib/utils/fileIcons';
 import { formatBytes, formatDate } from '@/lib/utils/format';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
+import { MODEL_FILE_ACCEPT, MODEL_FILE_HINT } from '@/lib/constants/resourceTypes';
 import type {
   DatasetInput,
+  ModelInput,
   PaperInput,
+  PromptInput,
   ResourceVisibility,
   ToolInput,
   UpdateResourceInput,
@@ -68,6 +71,7 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
   const reorderMutation = useReorderResourceAttachments(slug);
   const thumbnailUploadMutation = useUploadResourceFile();
   const datasetUploadMutation = useUploadResourceFile();
+  const modelUploadMutation = useUploadResourceFile();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<UpdateResourceInput | null>(null);
@@ -75,6 +79,8 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
   const [dataset, setDataset] = useState<DatasetInput>({});
   const [paper, setPaper] = useState<PaperInput>({});
   const [tool, setTool] = useState<ToolInput>({});
+  const [model, setModel] = useState<ModelInput>({});
+  const [prompt, setPrompt] = useState<PromptInput>({});
   const [initialized, setInitialized] = useState(false);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailUploadError, setThumbnailUploadError] = useState<string | null>(null);
@@ -92,6 +98,17 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
   const [initialPaperPdfUrl, setInitialPaperPdfUrl] = useState('');
   const [datasetFile, setDatasetFile] = useState<File | null>(null);
   const [datasetUploadError, setDatasetUploadError] = useState<string | null>(null);
+  // Same hazard as thumbnail_url/paper.pdf_url above, for model.file_url —
+  // resource.model.file_url is a resolved (possibly signed) URL; resending it
+  // unchanged would make the backend store the signed URL verbatim as the
+  // permanent value, breaking once it expires. Model has no UI field that
+  // edits file_url directly (it's system-set by upload only), but the create/
+  // update service still only writes it when a new upload happens, so no
+  // dirty-check comparison is actually needed on the payload side — kept here
+  // only so a future direct-URL-entry field for model files has the same
+  // guard already in place.
+  const [modelFile, setModelFile] = useState<File | null>(null);
+  const [modelUploadError, setModelUploadError] = useState<string | null>(null);
 
   if (resource && !initialized) {
     setForm({
@@ -139,6 +156,36 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
         install_command: resource.tool.install_command ?? undefined,
       });
     }
+    if (resource.model) {
+      setModel({
+        architecture: resource.model.architecture ?? undefined,
+        base_model: resource.model.base_model ?? undefined,
+        format: resource.model.format ?? undefined,
+        quantization: resource.model.quantization ?? undefined,
+        context_length: resource.model.context_length ?? undefined,
+        parameters: resource.model.parameters ?? undefined,
+        precision: resource.model.precision ?? undefined,
+        gpu_requirement: resource.model.gpu_requirement ?? undefined,
+        ram_requirement: resource.model.ram_requirement ?? undefined,
+        inference_example: resource.model.inference_example ?? undefined,
+        version: resource.model.version,
+        changelog: resource.model.changelog ?? undefined,
+        demo_url: resource.model.demo_url ?? undefined,
+        repository_url: resource.model.repository_url ?? undefined,
+        paper_url: resource.model.paper_url ?? undefined,
+      });
+    }
+    if (resource.prompt) {
+      setPrompt({
+        role: resource.prompt.role,
+        content: resource.prompt.content,
+        target_platforms: resource.prompt.target_platforms,
+        variables: resource.prompt.variables ?? undefined,
+        difficulty: resource.prompt.difficulty ?? undefined,
+        example_output: resource.prompt.example_output ?? undefined,
+        version: resource.prompt.version,
+      });
+    }
     setInitialized(true);
   }
 
@@ -184,6 +231,8 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
           ? { ...paper, pdf_url: paper.pdf_url !== initialPaperPdfUrl ? paper.pdf_url?.trim() || undefined : undefined }
           : undefined,
       tool: resource.type === 'tool' ? tool : undefined,
+      model: resource.type === 'model' ? model : undefined,
+      prompt: resource.type === 'prompt' ? prompt : undefined,
     };
 
     updateMutation.mutate(payload, {
@@ -246,6 +295,26 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
           await refetch();
         },
         onError: (error) => setDatasetUploadError(errorMessage(error, 'The file upload failed.')),
+      },
+    );
+  }
+
+  // Replaces the model's primary weight file — same immediate-upload pattern
+  // as handleDatasetFileChange above, distinct from the universal Attachments
+  // list below.
+  function handleModelFileChange(file: File | null) {
+    setModelFile(file);
+    setModelUploadError(null);
+    if (!file) return;
+
+    modelUploadMutation.mutate(
+      { slug, file, kind: 'model' },
+      {
+        onSuccess: async () => {
+          toast.success('Model file updated.');
+          await refetch();
+        },
+        onError: (error) => setModelUploadError(errorMessage(error, 'The file upload failed.')),
       },
     );
   }
@@ -411,6 +480,10 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
               onPaperChange={(patch) => setPaper((prev) => ({ ...prev, ...patch }))}
               tool={tool}
               onToolChange={(patch) => setTool((prev) => ({ ...prev, ...patch }))}
+              model={model}
+              onModelChange={(patch) => setModel((prev) => ({ ...prev, ...patch }))}
+              prompt={prompt}
+              onPromptChange={(patch) => setPrompt((prev) => ({ ...prev, ...patch }))}
             />
           </CardContent>
         </Card>
@@ -445,6 +518,39 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
                 uploading={datasetUploadMutation.isPending}
                 uploaded={datasetUploadMutation.isSuccess}
                 error={datasetUploadError}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {resource.type === 'model' ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Model file</CardTitle>
+              <CardDescription>The primary weight file for this model.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {resource.model?.file_url && !modelFile ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">Current file</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatBytes(resource.model.file_size_bytes) ?? 'Unknown size'}
+                      {resource.model.checksum_sha256 ? ` · ${resource.model.checksum_sha256.slice(0, 12)}…` : ''}
+                    </p>
+                  </div>
+                  <DownloadButton slug={slug} size="sm" variant="outline" />
+                </div>
+              ) : null}
+              <FileDropzone
+                label="Drag & drop a replacement file, or click to browse"
+                hint={MODEL_FILE_HINT}
+                accept={MODEL_FILE_ACCEPT}
+                file={modelFile}
+                onFileSelect={handleModelFileChange}
+                uploading={modelUploadMutation.isPending}
+                uploaded={modelUploadMutation.isSuccess}
+                error={modelUploadError}
               />
             </CardContent>
           </Card>

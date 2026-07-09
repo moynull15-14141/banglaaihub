@@ -37,8 +37,39 @@ enum ResourceType {
   prompt
   project
   news
+  model
 
   @@map("resource_type")
+}
+
+enum ModelFormat {
+  gguf
+  safetensors
+  onnx
+  pytorch
+  tensorflow
+  mlx
+  lora
+  adapter
+  other
+
+  @@map("model_format")
+}
+
+enum PromptRole {
+  system
+  developer
+  user
+
+  @@map("prompt_role")
+}
+
+enum PromptDifficulty {
+  beginner
+  intermediate
+  advanced
+
+  @@map("prompt_difficulty")
 }
 
 enum ResourceStatus {
@@ -334,6 +365,8 @@ model Resource {
   dataset          Dataset?
   paper            Paper?
   tool             Tool?
+  model            Model?
+  prompt           Prompt?
   resourceTags     ResourceTag[]
   bookmarks        Bookmark[]
   comments         Comment[]
@@ -437,6 +470,60 @@ model Tool {
   resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
   @@map("tools")
+}
+
+model Model {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId      String       @unique @map("resource_id") @db.Uuid
+  architecture    String?      @db.VarChar(200)
+  baseModel       String?      @map("base_model") @db.VarChar(200)
+  format          ModelFormat?
+  quantization    String?      @db.VarChar(100)
+  contextLength   Int?         @map("context_length")
+  parameters      String?      @db.VarChar(50)
+  precision       String?      @db.VarChar(50)
+  gpuRequirement  String?      @map("gpu_requirement")
+  ramRequirement  String?      @map("ram_requirement")
+  benchmarkScore  Json?        @map("benchmark_score") @db.JsonB
+  inferenceExample String?     @map("inference_example")
+  version         String       @default("v1.0") @db.VarChar(20)
+  changelog       String?
+  demoUrl         String?      @map("demo_url")
+  repositoryUrl   String?      @map("repository_url")
+  paperUrl        String?      @map("paper_url")
+  fileUrl         String?      @map("file_url")
+  fileSizeBytes   BigInt?      @map("file_size_bytes")
+  checksumSha256  String?      @map("checksum_sha256") @db.VarChar(64)
+  parentId        String?      @map("parent_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  parent   Model?   @relation("ModelVersions", fields: [parentId], references: [id])
+  versions Model[]  @relation("ModelVersions")
+
+  @@map("models")
+}
+
+model Prompt {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId      String            @unique @map("resource_id") @db.Uuid
+  role            PromptRole        @default(user)
+  content         String
+  targetPlatforms String[]          @map("target_platforms")
+  variables       Json?             @db.JsonB
+  difficulty      PromptDifficulty?
+  exampleOutput   String?           @map("example_output")
+  version         String            @default("v1.0") @db.VarChar(20)
+  parentId        String?           @map("parent_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  parent   Prompt?  @relation("PromptForks", fields: [parentId], references: [id])
+  forks    Prompt[] @relation("PromptForks")
+
+  @@map("prompts")
 }
 
 // ---------------------------------------------------------------------------

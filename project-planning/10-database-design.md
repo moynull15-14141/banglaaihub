@@ -147,7 +147,7 @@ resources
 ├── title            VARCHAR(300) NOT NULL
 ├── description      TEXT
 ├── type             VARCHAR(50) NOT NULL
-│                    -- dataset | paper | tool | tutorial | prompt | project | news
+│                    -- dataset | paper | tool | tutorial | prompt | project | news | model
 ├── category_id      INTEGER REFERENCES categories(id)
 ├── author_id        UUID REFERENCES users(id)
 ├── status           VARCHAR(20) DEFAULT 'pending'
@@ -215,7 +215,7 @@ papers
 └── updated_at       TIMESTAMPTZ DEFAULT NOW()
 ```
 
-### 9. `tools` (extends resources — tools, tutorials, prompts)
+### 9. `tools` (extends resources — tools, tutorials)
 
 ```sql
 tools
@@ -230,6 +230,58 @@ tools
 ├── checksum_sha256  VARCHAR(64)
 ├── created_at       TIMESTAMPTZ DEFAULT NOW()
 └── updated_at       TIMESTAMPTZ DEFAULT NOW()
+```
+
+### 9a. `models` (extends resources — Phase 3A Model Hub)
+
+Weight file itself reuses the exact same single-slot upload pattern as `datasets.file_url`/`tools.file_url` (uploaded via `POST /resources/:slug/upload?kind=model`, validated against `StorageService.MODEL_ALLOWED_EXTENSIONS`/`MODEL_MAX_FILE_SIZE`). `parent_id` is a shallow version-history link, same convention as `datasets.parent_id`.
+
+```sql
+models
+├── id                 UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── resource_id        UUID UNIQUE REFERENCES resources(id) ON DELETE CASCADE
+├── architecture       VARCHAR(200)              -- transformer, mamba, mixture-of-experts…
+├── base_model         VARCHAR(200)              -- e.g. "Llama-3-8B" if fine-tuned/quantized from a base
+├── format             VARCHAR(20)               -- gguf | safetensors | onnx | pytorch | tensorflow | mlx | lora | adapter | other
+├── quantization       VARCHAR(100)              -- Q4_K_M, INT8, FP16…
+├── context_length     INTEGER
+├── parameters         VARCHAR(50)               -- "7B", "13B", "1.5B"
+├── precision          VARCHAR(50)               -- fp16, fp32, int8, int4…
+├── gpu_requirement     TEXT
+├── ram_requirement     TEXT
+├── benchmark_score    JSONB                     -- {mmlu: 0.68, bangla_eval: 0.81}
+├── inference_example  TEXT                      -- sample code/CLI to run the model
+├── version            VARCHAR(20) DEFAULT 'v1.0'
+├── changelog          TEXT
+├── demo_url           TEXT
+├── repository_url     TEXT
+├── paper_url          TEXT
+├── file_url           TEXT                      -- Cloudflare R2 key, the model weight file
+├── file_size_bytes    BIGINT
+├── checksum_sha256    VARCHAR(64)
+├── parent_id          UUID REFERENCES models(id)   -- version history: v1 → v2
+├── created_at         TIMESTAMPTZ DEFAULT NOW()
+└── updated_at         TIMESTAMPTZ DEFAULT NOW()
+```
+
+### 9b. `prompts` (extends resources — Phase 3A Prompt Hub)
+
+`parent_id` doubles as the "Fork Prompt" relationship (same shallow self-link convention as `models.parent_id`/`datasets.parent_id`) — no separate fork-count column, computed on demand like every other derived count in this schema.
+
+```sql
+prompts
+├── id                 UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── resource_id        UUID UNIQUE REFERENCES resources(id) ON DELETE CASCADE
+├── role               VARCHAR(20) DEFAULT 'user'   -- system | developer | user
+├── content            TEXT NOT NULL                -- the actual prompt body
+├── target_platforms   TEXT[]                       -- chatgpt, claude, gemini, midjourney, cursor…
+├── variables          JSONB                        -- [{name, description, default_value}]
+├── difficulty         VARCHAR(20)                  -- beginner | intermediate | advanced
+├── example_output     TEXT
+├── version            VARCHAR(20) DEFAULT 'v1.0'
+├── parent_id          UUID REFERENCES prompts(id)  -- fork-of / version-of
+├── created_at         TIMESTAMPTZ DEFAULT NOW()
+└── updated_at         TIMESTAMPTZ DEFAULT NOW()
 ```
 
 ---

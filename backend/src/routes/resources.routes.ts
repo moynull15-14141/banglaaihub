@@ -73,6 +73,13 @@ resourcesRouter.post(
 );
 resourcesRouter.post('/:slug/share', authenticateOptional, resourcesController.share);
 
+// Phase 3A.1 — Prompt Fork / Version History. Fork reuses the exact same
+// resource:create guard as POST / above (it calls ResourceService.create()
+// internally); versions is a read endpoint, visibility is enforced inside
+// the service exactly like GET /:slug above.
+resourcesRouter.post('/:slug/fork', authenticate, authorize('resource:create'), resourcesController.fork);
+resourcesRouter.get('/:slug/versions', authenticateOptional, resourcesController.getVersions);
+
 // Ownership vs. resource:edit_any is resolved inside the service (same
 // pattern as PUT /:slug above) — any authenticated user can hit these
 // routes, assertCanModify() inside each service method is what actually gates.

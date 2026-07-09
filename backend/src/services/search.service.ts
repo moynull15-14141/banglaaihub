@@ -22,6 +22,11 @@ export interface SearchDocument {
   category_name: string | null;
   category_slug: string | null;
   license: string | null;
+  // Model Hub (Phase 3A) — sourced from resource.model.format, null for
+  // every other resource type. Kept as a top-level field (rather than a
+  // deeper nested one) since MeiliSearch's filterableAttributes only
+  // supports flat document fields.
+  format: string | null;
   tags: string[];
   author_id: string | null;
   author_name: string | null;
@@ -48,6 +53,7 @@ function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
     category_name: resource.category?.name ?? null,
     category_slug: resource.category?.slug ?? null,
     license: resource.license,
+    format: resource.model?.format ?? null,
     tags: resource.resourceTags.map((rt) => rt.tag.name),
     author_id: resource.author?.id ?? null,
     author_name: resource.author?.username ?? null,
@@ -105,7 +111,7 @@ export class SearchService {
   static async configureIndex(): Promise<void> {
     await this.index.updateSettings({
       searchableAttributes: ['title', 'description', 'tags', 'author_name', 'category_name'],
-      filterableAttributes: ['type', 'status', 'language', 'category_id', 'license'],
+      filterableAttributes: ['type', 'status', 'language', 'category_id', 'license', 'format'],
       sortableAttributes: [
         'view_count',
         'download_count',

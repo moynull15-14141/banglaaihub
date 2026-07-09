@@ -14,6 +14,7 @@ const RESOURCE_TYPES: { value: ResourceType; label: string }[] = [
   { value: 'prompt', label: 'Prompt' },
   { value: 'project', label: 'Project' },
   { value: 'news', label: 'News' },
+  { value: 'model', label: 'Model' },
 ];
 
 const LANGUAGES: { value: ResourceLanguage; label: string }[] = [

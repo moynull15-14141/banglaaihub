@@ -14,8 +14,11 @@ export const ROUTES = {
   paper: (slug: string) => `/papers/${slug}`,
   tools: '/tools',
   tool: (slug: string) => `/tools/${slug}`,
+  models: '/models',
+  model: (slug: string) => `/models/${slug}`,
   tutorials: '/tutorials',
   prompts: '/prompts',
+  prompt: (slug: string) => `/prompts/${slug}`,
   projects: '/projects',
   news: '/news',
   search: '/search',
@@ -57,9 +60,9 @@ export const ROUTES = {
   serverError: '/server-error',
 } as const;
 
-// Datasets/papers/tools have dedicated canonical routes per doc 12; every
-// other resource type (tutorial/prompt/project/news) falls back to the
-// generic /resources/[slug] route added in Phase 9.
+// Datasets/papers/tools/models/prompts have dedicated canonical routes per
+// doc 12; every other resource type (tutorial/project/news) falls back to
+// the generic /resources/[slug] route added in Phase 9.
 export function resourceHref(type: string, slug: string): string {
   switch (type) {
     case 'dataset':
@@ -68,6 +71,10 @@ export function resourceHref(type: string, slug: string): string {
       return ROUTES.paper(slug);
     case 'tool':
       return ROUTES.tool(slug);
+    case 'model':
+      return ROUTES.model(slug);
+    case 'prompt':
+      return ROUTES.prompt(slug);
     default:
       return ROUTES.resource(slug);
   }

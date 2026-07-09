@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { datasetInputSchema } from './dataset.validator';
 import { paperInputSchema } from './paper.validator';
 import { toolInputSchema } from './tool.validator';
+import { modelInputSchema } from './model.validator';
+import { promptInputSchema } from './prompt.validator';
 
 // Full set per doc 10's ResourceType enum (doc 13's example schema only shows
 // 5 of the 7 — dataset/paper/tool/tutorial/prompt — omitting project/news,
-// which are still valid per the locked Prisma enum).
+// which are still valid per the locked Prisma enum). `model` added Phase 3A.
 const RESOURCE_TYPES = [
   'dataset',
   'paper',
@@ -14,6 +16,7 @@ const RESOURCE_TYPES = [
   'prompt',
   'project',
   'news',
+  'model',
 ] as const;
 const LANGUAGES = ['bn', 'en', 'both'] as const;
 const RESOURCE_STATUSES = ['pending', 'approved', 'rejected', 'flagged'] as const;
@@ -34,6 +37,8 @@ export const createResourceSchema = z.object({
   dataset: datasetInputSchema.optional(),
   paper: paperInputSchema.optional(),
   tool: toolInputSchema.optional(),
+  model: modelInputSchema.optional(),
+  prompt: promptInputSchema.optional(),
 });
 export type CreateResourceInput = z.infer<typeof createResourceSchema>;
 
@@ -61,7 +66,7 @@ export type ListResourcesQuery = z.infer<typeof listResourcesQuerySchema>;
 // `dataset` is the default so the pre-existing dataset-file upload call
 // sites (which never sent `kind`) keep working unchanged.
 export const uploadResourceFileQuerySchema = z.object({
-  kind: z.enum(['dataset', 'thumbnail', 'pdf', 'asset', 'documentation']).default('dataset'),
+  kind: z.enum(['dataset', 'thumbnail', 'pdf', 'asset', 'documentation', 'model']).default('dataset'),
 });
 export type UploadResourceFileQuery = z.infer<typeof uploadResourceFileQuerySchema>;
 

@@ -25,6 +25,8 @@ import { useAddResourceAttachment, useCreateResource, useUploadResourceFile } fr
 import { useAutosaveDraft, readDraft, clearDraft } from '@/lib/hooks/useAutosaveDraft';
 import { ROUTES } from '@/lib/constants/routes';
 import {
+  MODEL_FILE_ACCEPT,
+  MODEL_FILE_HINT,
   RESOURCE_ATTACHMENT_ACCEPT_BY_TYPE,
   RESOURCE_ATTACHMENT_HINT_BY_TYPE,
   RESOURCE_TYPE_LABELS,
@@ -35,7 +37,9 @@ import type {
   CreateResourceInput,
   CreateResourceResult,
   DatasetInput,
+  ModelInput,
   PaperInput,
+  PromptInput,
   ResourceLanguage,
   ResourceType,
   ToolInput,
@@ -125,12 +129,14 @@ export function SubmitResourceView() {
   const uploadMutation = useUploadResourceFile();
 
   const thumbnailUploadMutation = useUploadResourceFile();
+  const modelUploadMutation = useUploadResourceFile();
   const addAttachmentMutation = useAddResourceAttachment();
 
   const [step, setStep] = useState<Step>('form');
   const [form, setForm] = useState<CreateResourceInput>(emptyForm);
   const [tagsText, setTagsText] = useState('');
   const [datasetFile, setDatasetFile] = useState<File | null>(null);
+  const [modelFile, setModelFile] = useState<File | null>(null);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   // Universal multi-file attachments (Part 1/2) — available for every
   // resource type, separate from the dataset-only single-file field above.
@@ -141,10 +147,14 @@ export function SubmitResourceView() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [modelUploadProgress, setModelUploadProgress] = useState(0);
+  const [modelUploadSpeed, setModelUploadSpeed] = useState<number | null>(null);
+  const [modelUploadError, setModelUploadError] = useState<string | null>(null);
   const [thumbnailUploadError, setThumbnailUploadError] = useState<string | null>(null);
   const [hasAttemptedContinue, setHasAttemptedContinue] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const modelAbortControllerRef = useRef<AbortController | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsInputRef = useRef<HTMLInputElement>(null);
@@ -175,10 +185,17 @@ export function SubmitResourceView() {
   function setTool(patch: Partial<ToolInput>) {
     setForm((prev) => ({ ...prev, tool: { ...prev.tool, ...patch } }));
   }
+  function setModel(patch: Partial<ModelInput>) {
+    setForm((prev) => ({ ...prev, model: { ...prev.model, ...patch } }));
+  }
+  function setPrompt(patch: Partial<PromptInput>) {
+    setForm((prev) => ({ ...prev, prompt: { ...prev.prompt, ...patch } }));
+  }
 
   function handleTypeChange(nextType: ResourceType) {
     setForm((prev) => ({ ...prev, type: nextType }));
     if (nextType !== 'dataset') setDatasetFile(null);
+    if (nextType !== 'model') setModelFile(null);
     // Allowed extensions differ per type — clear the queue rather than risk
     // silently carrying over a file the new type's server-side validation
     // will reject anyway.
@@ -297,6 +314,13 @@ export function SubmitResourceView() {
       ...form.tool,
       demo_url: normalizeUrl(form.tool?.demo_url),
     });
+    const model = cleanObject({
+      ...form.model,
+      demo_url: normalizeUrl(form.model?.demo_url),
+      repository_url: normalizeUrl(form.model?.repository_url),
+      paper_url: normalizeUrl(form.model?.paper_url),
+    });
+    const prompt = cleanObject(form.prompt ?? {});
 
     return cleanObject({
       title: form.title.trim(),
@@ -311,6 +335,8 @@ export function SubmitResourceView() {
       dataset: form.type === 'dataset' ? dataset : undefined,
       paper: form.type === 'paper' ? paper : undefined,
       tool: form.type === 'tool' ? tool : undefined,
+      model: form.type === 'model' ? model : undefined,
+      prompt: form.type === 'prompt' ? prompt : undefined,
     });
   }
 
@@ -342,6 +368,35 @@ export function SubmitResourceView() {
     );
   }
 
+  function runModelUpload(slug: string) {
+    const controller = new AbortController();
+    modelAbortControllerRef.current = controller;
+    modelUploadMutation.mutate(
+      {
+        slug,
+        file: modelFile as File,
+        kind: 'model',
+        signal: controller.signal,
+        onProgress: (info) => {
+          setModelUploadProgress(info.percent);
+          setModelUploadSpeed(info.bytesPerSecond);
+        },
+      },
+      {
+        onSuccess: () => setModelUploadError(null),
+        onError: (error) => {
+          if (isAxiosError(error) && error.code === 'ERR_CANCELED') {
+            setModelUploadError('Upload cancelled.');
+            return;
+          }
+          setModelUploadError(
+            errorMessage(error, 'Your resource was created, but the model file upload failed. You can retry it below.'),
+          );
+        },
+      },
+    );
+  }
+
   function runThumbnailUpload(slug: string) {
     thumbnailUploadMutation.mutate(
       { slug, file: thumbnailFile as File, kind: 'thumbnail' },
@@ -362,6 +417,9 @@ export function SubmitResourceView() {
         setStep('success');
         if (form.type === 'dataset' && datasetFile) {
           runUpload(created.slug);
+        }
+        if (form.type === 'model' && modelFile) {
+          runModelUpload(created.slug);
         }
         if (thumbnailFile) {
           runThumbnailUpload(created.slug);
@@ -386,6 +444,16 @@ export function SubmitResourceView() {
     runUpload(result.slug);
   }
 
+  function handleCancelModelUpload() {
+    modelAbortControllerRef.current?.abort();
+  }
+
+  function handleRetryModelUpload() {
+    if (!result || !modelFile) return;
+    setModelUploadError(null);
+    runModelUpload(result.slug);
+  }
+
   function handleRetryThumbnailUpload() {
     if (!result || !thumbnailFile) return;
     runThumbnailUpload(result.slug);
@@ -395,12 +463,16 @@ export function SubmitResourceView() {
     setForm(emptyForm());
     setTagsText('');
     setDatasetFile(null);
+    setModelFile(null);
     setThumbnailFile(null);
     setQueuedAttachments([]);
     setResult(null);
     setUploadProgress(0);
     setUploadSpeed(null);
     setUploadError(null);
+    setModelUploadProgress(0);
+    setModelUploadSpeed(null);
+    setModelUploadError(null);
     setThumbnailUploadError(null);
     setHasAttemptedContinue(false);
     setStep('form');
@@ -459,6 +531,28 @@ export function SubmitResourceView() {
                 />
                 {uploadError ? (
                   <Button type="button" variant="outline" size="sm" onClick={handleRetryUpload}>
+                    Retry upload
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {form.type === 'model' && modelFile ? (
+              <div className="space-y-2">
+                <FileDropzone
+                  label="Model file"
+                  file={modelFile}
+                  onFileSelect={() => {}}
+                  uploading={modelUploadMutation.isPending}
+                  progress={modelUploadProgress}
+                  bytesPerSecond={modelUploadSpeed}
+                  uploaded={!modelUploadError && !modelUploadMutation.isPending}
+                  error={modelUploadError}
+                  onCancel={handleCancelModelUpload}
+                  disabled={!modelUploadMutation.isPending}
+                />
+                {modelUploadError ? (
+                  <Button type="button" variant="outline" size="sm" onClick={handleRetryModelUpload}>
                     Retry upload
                   </Button>
                 ) : null}
@@ -601,6 +695,19 @@ export function SubmitResourceView() {
                 <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Dataset file</p>
                 {datasetFile ? (
                   <p className="text-sm">{datasetFile.name}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No file attached — you can upload it now or add it later from My Submissions.
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            {form.type === 'model' ? (
+              <div>
+                <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Model file</p>
+                {modelFile ? (
+                  <p className="text-sm">{modelFile.name}</p>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     No file attached — you can upload it now or add it later from My Submissions.
@@ -866,6 +973,10 @@ export function SubmitResourceView() {
               onPaperChange={setPaper}
               tool={form.tool ?? {}}
               onToolChange={setTool}
+              model={form.model ?? {}}
+              onModelChange={setModel}
+              prompt={form.prompt ?? {}}
+              onPromptChange={setPrompt}
             />
           </CardContent>
         </Card>
@@ -883,6 +994,24 @@ export function SubmitResourceView() {
                 accept={DATASET_FILE_ACCEPT}
                 file={datasetFile}
                 onFileSelect={setDatasetFile}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {form.type === 'model' ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Model file</CardTitle>
+              <CardDescription>Optional here — you can also attach it after submitting.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FileDropzone
+                label="Drag & drop your model weight file, or click to browse"
+                hint={MODEL_FILE_HINT}
+                accept={MODEL_FILE_ACCEPT}
+                file={modelFile}
+                onFileSelect={setModelFile}
               />
             </CardContent>
           </Card>

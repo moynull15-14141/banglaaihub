@@ -6,6 +6,7 @@ import type {
   ListResourcesParams,
   Resource,
   ResourceAttachment,
+  ResourceVersionEntry,
   UpdateResourceInput,
   UploadKind,
 } from '@/types/resource';
@@ -149,6 +150,26 @@ export async function confirmResourceDownload(slug: string, fileId?: string): Pr
 // share action (opening a share link / copying to clipboard).
 export async function logResourceShare(slug: string): Promise<void> {
   await apiClient.post(`/resources/${encodeURIComponent(slug)}/share`);
+}
+
+// POST /resources/:slug/fork — Phase 3A.1. Reuses the exact same
+// CreateResourceResult shape as createResource() above (it's the same
+// service-layer create() call server-side, just pre-filled from the source
+// prompt) — the caller redirects to the returned slug's edit page.
+export async function forkResource(slug: string): Promise<CreateResourceResult> {
+  const response = await apiClient.post<ApiSuccessResponse<CreateResourceResult>>(
+    `/resources/${encodeURIComponent(slug)}/fork`,
+  );
+  return response.data.data;
+}
+
+// GET /resources/:slug/versions — Phase 3A.1. Ordered oldest-to-newest;
+// empty array means "no version history to show" (0 or 1 total entries).
+export async function getResourceVersions(slug: string): Promise<ResourceVersionEntry[]> {
+  const response = await apiClient.get<ApiSuccessResponse<ResourceVersionEntry[]>>(
+    `/resources/${encodeURIComponent(slug)}/versions`,
+  );
+  return response.data.data;
 }
 
 // --- Attachments (ResourceFile) --------------------------------------------

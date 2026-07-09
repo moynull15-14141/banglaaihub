@@ -11,6 +11,7 @@ import { ErrorState } from '@/components/common/ErrorState';
 import { PageContainer } from '@/components/common/PageContainer';
 import { AttachmentsSection } from '@/components/resource/AttachmentsSection';
 import { CitationBlock } from '@/components/resource/CitationBlock';
+import { ForkPromptButton } from '@/components/resource/ForkPromptButton';
 import { MoreFromAuthorCard } from '@/components/resource/MoreFromAuthorCard';
 import { ReportResourceDialog } from '@/components/resource/ReportResourceDialog';
 import { ResourceMeta } from '@/components/resource/ResourceMeta';
@@ -18,6 +19,7 @@ import { ResourceTypeMetadata } from '@/components/resource/ResourceTypeMetadata
 import { ShareButtons } from '@/components/resource/ShareButtons';
 import { SimilarResourcesCard } from '@/components/resource/SimilarResourcesCard';
 import { TagBadge } from '@/components/resource/TagBadge';
+import { VersionHistorySection } from '@/components/resource/VersionHistorySection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { UserCard } from '@/components/user/UserCard';
@@ -167,6 +169,7 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
               </a>
             </Button>
           ) : null}
+          <ForkPromptButton resource={resource} />
           <Button type="button" variant="ghost" onClick={handleReportClick}>
             <Flag className="size-4" aria-hidden="true" />
             Report
@@ -192,6 +195,8 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
       ) : null}
 
       <ResourceTypeMetadata resource={resource} />
+
+      <VersionHistorySection resource={resource} />
 
       <AttachmentsSection slug={resource.slug} attachments={resource.attachments} />
 
