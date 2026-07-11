@@ -23,7 +23,14 @@ function setRefreshCookie(res: Response, token: string): void {
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    // Frontend (Vercel) and backend (Render) are deployed on unrelated
+    // domains, so this cookie is sent on cross-site XHR/fetch requests
+    // (apiClient's withCredentials refresh call) — 'strict' or 'lax' would
+    // both silently drop it there, breaking refresh for every logged-in
+    // user in production. 'None' requires Secure, which NODE_ENV=production
+    // already guarantees. Dev keeps 'lax' since localhost:3000/5000 are
+    // same-site (port doesn't affect site) and 'None' needs HTTPS.
+    sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
     path: '/api/v1/auth',
   });
