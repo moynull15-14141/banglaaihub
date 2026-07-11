@@ -37,3 +37,9 @@ coverage/
 
 # Misc
 .turbo/
+
+# Internal-only reports that narrate the (now-fixed-in-.env.example, but
+# unrotated-in-Supabase-until-confirmed) DB credential incident in detail —
+# kept local for reference, deliberately never pushed to this public repo.
+project-planning/PROJECT-STATUS-AND-LAUNCH-GUIDE-2026-07-11.md
+project-planning/PRODUCTION-HARDENING-REPORT-2026-07-11.md
