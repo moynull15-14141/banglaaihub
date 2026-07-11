@@ -2,6 +2,7 @@
 
 import { MessageCircle } from 'lucide-react';
 import { EmptyState } from '@/components/common/EmptyState';
+import { ErrorState } from '@/components/common/ErrorState';
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { Badge } from '@/components/ui/badge';
 import { useConversations } from '@/lib/hooks/useMessaging';
@@ -10,7 +11,7 @@ import { formatRelativeDate } from '@/lib/utils/format';
 import { cn } from '@/lib/utils';
 
 export function ConversationListPanel() {
-  const { data, isLoading } = useConversations(true);
+  const { data, isLoading, isError, refetch } = useConversations(true);
   const openThreadWithConversation = useMessagingDockStore((state) => state.openThreadWithConversation);
 
   const conversations = data?.data ?? [];
@@ -23,6 +24,8 @@ export function ConversationListPanel() {
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <p className="p-4 text-center text-xs text-muted-foreground">Loading…</p>
+        ) : isError ? (
+          <ErrorState title="Couldn't load conversations" onRetry={() => void refetch()} />
         ) : conversations.length === 0 ? (
           <EmptyState
             icon={MessageCircle}

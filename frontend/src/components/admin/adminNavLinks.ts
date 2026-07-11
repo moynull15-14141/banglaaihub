@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileText,
   Flag,
+  FolderTree,
   LayoutDashboard,
   Rss,
   Search,
@@ -29,7 +30,15 @@ export const ADMIN_NAV_LINKS: {
   icon: typeof LayoutDashboard;
   roles: RoleName[];
 }[] = [
-  { href: ROUTES.admin, label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'super_admin'] },
+  {
+    href: ROUTES.admin,
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    // admin:manage-gated (see GET /admin/dashboard) — same as Categories
+    // below, admin:manage is only granted to 'super_admin' in
+    // ROLE_PERMISSIONS (backend/scripts/seed.ts); a plain 'admin' would 403.
+    roles: ['super_admin'],
+  },
   {
     href: ROUTES.adminPending,
     label: 'Pending Approvals',
@@ -44,6 +53,17 @@ export const ADMIN_NAV_LINKS: {
   },
   { href: ROUTES.adminUsers, label: 'Users', icon: Users, roles: ['admin', 'super_admin'] },
   { href: ROUTES.adminBadges, label: 'Badges', icon: Award, roles: ['admin', 'super_admin'] },
+  {
+    href: ROUTES.adminCategories,
+    label: 'Categories',
+    icon: FolderTree,
+    // admin:manage-gated (see categoriesRouter's POST/PUT/DELETE) — unlike
+    // Badges (user:manage_badges, granted to 'admin'), admin:manage is only
+    // granted to 'super_admin' in ROLE_PERMISSIONS (backend/scripts/seed.ts).
+    // A plain 'admin' can list categories (that endpoint is public) but
+    // every create/update/delete would 403, so don't show this to 'admin'.
+    roles: ['super_admin'],
+  },
   {
     href: ROUTES.adminReports,
     label: 'Reports',

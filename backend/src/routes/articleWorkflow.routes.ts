@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from '../controllers/articleWorkflow.controller';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validate';
 import {
   assignArticleSchema,
@@ -19,6 +20,12 @@ import {
 // from the existing PUBLIC /resources/:slug/comments (comments.routes.ts) —
 // so there is no route-path ambiguity between the two systems.
 const router = Router({ mergeParams: true });
+
+// No file-specific line in doc 13's rate-limiting table — dedicated instance
+// of the doc's "All other GET" default (300/min/IP), same values as
+// rateLimiter.ts's generalLimiter, kept as its own instance so this file
+// still has a defined ceiling if the app-wide blanket limiter ever changes.
+router.use(createRateLimiter({ windowMs: 60 * 1000, max: 300 }));
 
 // Per-edge permission checks live inside ArticleWorkflowService.transition()
 // itself (the graph is permission-gated per edge, not one fixed route-level

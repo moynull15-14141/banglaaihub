@@ -4,21 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createBadgeAdmin,
   deleteBadgeAdmin,
-  grantBadgeAdmin,
   listBadgeCatalogAdmin,
-  listUserBadges,
-  revokeBadgeAdmin,
   updateBadgeAdmin,
 } from '@/lib/api/badges';
 import type { CreateBadgeInput, UpdateBadgeInput } from '@/types/badge';
-
-export function useUserBadges(username: string) {
-  return useQuery({
-    queryKey: ['users', 'badges', username],
-    queryFn: () => listUserBadges(username),
-    enabled: Boolean(username),
-  });
-}
 
 const ADMIN_BADGES_KEY = ['admin', 'badges'];
 
@@ -55,21 +44,5 @@ export function useDeleteBadge() {
   return useMutation({
     mutationFn: (id: number) => deleteBadgeAdmin(id),
     onSuccess: invalidate,
-  });
-}
-
-export function useGrantBadge() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ userId, badgeId }: { userId: string; badgeId: number }) => grantBadgeAdmin(userId, badgeId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['users', 'badges'] }),
-  });
-}
-
-export function useRevokeBadge() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ userId, badgeId }: { userId: string; badgeId: number }) => revokeBadgeAdmin(userId, badgeId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['users', 'badges'] }),
   });
 }

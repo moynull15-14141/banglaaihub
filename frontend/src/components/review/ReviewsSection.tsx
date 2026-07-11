@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { FilterSelect } from '@/components/common/FilterSelect';
 import { Pagination } from '@/components/common/Pagination';
 import { SectionHeader } from '@/components/common/SectionHeader';
+import { EmptyState } from '@/components/common/EmptyState';
+import { ErrorState } from '@/components/common/ErrorState';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { usePagination } from '@/lib/hooks/usePagination';
 import {
@@ -51,7 +53,7 @@ export function ReviewsSection({ resourceSlug, resourceAuthorId }: ReviewsSectio
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
 
   const { data: summary } = useRatingSummary(resourceSlug);
-  const { data: reviewsResult, isLoading } = useReviews(resourceSlug, { sort, page, limit });
+  const { data: reviewsResult, isLoading, isError, refetch } = useReviews(resourceSlug, { sort, page, limit });
   const createMutation = useCreateReview(resourceSlug);
   const updateMutation = useUpdateReview(resourceSlug);
   const deleteMutation = useDeleteReview(resourceSlug);
@@ -145,6 +147,10 @@ export function ReviewsSection({ resourceSlug, resourceAuthorId }: ReviewsSectio
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading reviews…</p>
+      ) : isError ? (
+        <ErrorState title="Couldn't load reviews" onRetry={() => void refetch()} />
+      ) : reviews.length === 0 ? (
+        <EmptyState title="No reviews yet" description="Be the first to share your thoughts on this resource." />
       ) : (
         <div className="space-y-3">
           {reviews.map((review) =>

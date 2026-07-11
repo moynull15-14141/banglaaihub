@@ -67,6 +67,7 @@ export function DashboardTopbar() {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
+              aria-label="User menu"
               className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <UserAvatar

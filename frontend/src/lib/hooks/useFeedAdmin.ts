@@ -15,7 +15,6 @@ import {
   rollbackFeedConfigAdmin,
   updateFeedAnnouncementAdmin,
   updateFeedConfigAdmin,
-  updateFeedPinAdmin,
   uploadFeedAnnouncementImageAdmin,
 } from '@/lib/api/feed-admin';
 import type { UploadProgressInfo } from '@/lib/api/resources';
@@ -25,7 +24,6 @@ import type {
   PreviewFeedInput,
   UpdateFeedAnnouncementInput,
   UpdateFeedConfigInput,
-  UpdateFeedPinInput,
 } from '@/types/feed-admin';
 
 const FEED_CONFIG_KEY = ['admin', 'feed', 'config'];
@@ -56,14 +54,6 @@ export function useCreateFeedPin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateFeedPinInput) => createFeedPinAdmin(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: FEED_PINS_KEY }),
-  });
-}
-
-export function useUpdateFeedPin() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: UpdateFeedPinInput }) => updateFeedPinAdmin(id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: FEED_PINS_KEY }),
   });
 }

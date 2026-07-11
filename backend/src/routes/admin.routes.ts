@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import { feedAnnouncementImageUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
 import {
@@ -11,6 +12,7 @@ import {
   listReportsQuerySchema,
   listUsersQuerySchema,
   rejectReportSchema,
+  rejectResourceSchema,
   updateAutoApprovalSettingSchema,
   updateBadgeSchema,
   updateReportStatusSchema,
@@ -33,6 +35,11 @@ import {
 } from '../validators/contributor-application.validator';
 
 const router = Router();
+
+// doc 13's rate-limiting table: "Admin endpoints" — 30/min, tighter than the
+// 300/min "All other GET" default. Every route in this file is admin-tier
+// (authenticate + authorize(...) on all of them), so this applies file-wide.
+router.use(createRateLimiter({ windowMs: 60 * 1000, max: 30 }));
 
 // --- Resource moderation ---
 router.get(
@@ -65,6 +72,7 @@ router.post(
   '/resources/:id/reject',
   authenticate,
   authorize('resource:approve'),
+  validate(rejectResourceSchema),
   adminController.rejectResource,
 );
 router.post(

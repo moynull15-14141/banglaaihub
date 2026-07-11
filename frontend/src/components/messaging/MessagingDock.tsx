@@ -25,7 +25,7 @@ export function MessagingDock() {
   return (
     <div className="fixed right-4 bottom-4 z-40 flex flex-col items-end sm:right-6">
       {isOpen ? (
-        <div className="mb-2 h-[420px] w-[320px] overflow-hidden rounded-xl border border-border bg-popover shadow-xl sm:w-[360px]">
+        <div className="mb-2 h-[420px] w-[min(320px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border bg-popover shadow-xl sm:w-[360px]">
           {view === 'thread' ? <ChatThreadPanel /> : <ConversationListPanel />}
         </div>
       ) : null}

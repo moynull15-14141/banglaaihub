@@ -1,10 +1,15 @@
 import { Router } from 'express';
 import * as searchController from '../controllers/search.controller';
 import { authenticateOptional } from '../middleware/authenticate';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validate';
 import { popularSearchesQuerySchema, searchQuerySchema, suggestQuerySchema } from '../validators/search.validator';
 
 const router = Router();
+
+// doc 13's rate-limiting table: "GET /search" — 60/min/IP, tighter than the
+// 300/min "All other GET" default.
+router.use(createRateLimiter({ windowMs: 60 * 1000, max: 60 }));
 
 // authenticateOptional — search itself has never required auth, but userId
 // (when present) is attached to the SearchLog row for the search that's

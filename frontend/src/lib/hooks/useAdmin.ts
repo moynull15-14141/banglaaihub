@@ -18,9 +18,7 @@ import {
   rejectContributorApplicationAdmin,
   rejectReportAdmin,
   rejectResourceAdmin,
-  removeFollowAdmin,
   requestContributorApplicationRevisionAdmin,
-  resetUserCoverImageAdmin,
   resolveReportAdmin,
   restoreResourceAdmin,
   unfeatureResourceAdmin,
@@ -274,12 +272,4 @@ export function useVerifyUser() {
 
 export function useUnverifyUser() {
   return useUserMutation((id: string) => unverifyUserAdmin(id));
-}
-
-export function useResetUserCoverImage() {
-  return useUserMutation((id: string) => resetUserCoverImageAdmin(id));
-}
-
-export function useRemoveFollowAdmin() {
-  return useMutation({ mutationFn: (followId: string) => removeFollowAdmin(followId) });
 }

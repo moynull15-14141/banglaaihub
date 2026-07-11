@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as usersController from '../controllers/users.controller';
 import { authenticate, authenticateOptional } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
+import { createRateLimiter } from '../middleware/rateLimiter';
 import { avatarUpload, coverUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
 import {
@@ -17,6 +18,14 @@ import {
 } from '../validators/user.validator';
 
 const router = Router();
+
+// No file-specific line in doc 13's rate-limiting table — dedicated instance
+// of the doc's "All other GET" default (300/min/IP), same values as
+// rateLimiter.ts's generalLimiter, kept as its own instance so this file
+// still has a defined ceiling if the app-wide blanket limiter ever changes.
+// router.use() runs for every request regardless of path, so it doesn't
+// interfere with the /me-and-/search-before-/:username ordering below.
+router.use(createRateLimiter({ windowMs: 60 * 1000, max: 300 }));
 
 // Static /me and /search routes must be registered before the dynamic
 // /:username route below (and before /:username/* sub-routes), same

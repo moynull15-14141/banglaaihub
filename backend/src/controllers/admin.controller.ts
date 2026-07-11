@@ -23,6 +23,7 @@ import type {
   ListReportsQuery,
   ListUsersQuery,
   RejectReportInput,
+  RejectResourceInput,
   UpdateAutoApprovalSettingInput,
   UpdateBadgeInput,
   UpdateReportStatusInput,
@@ -104,9 +105,8 @@ export async function approveResource(req: Request, res: Response): Promise<void
 
 export async function rejectResource(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
-  const body = req.body as { reason?: unknown };
-  const reason = typeof body.reason === 'string' ? body.reason : undefined;
-  const resource = await ResourceService.reject(requireParam(req, 'id'), user.userId, reason);
+  const body = req.validatedBody as RejectResourceInput;
+  const resource = await ResourceService.reject(requireParam(req, 'id'), user.userId, body.reason);
   sendSuccess(res, resource);
 }
 

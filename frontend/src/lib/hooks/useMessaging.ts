@@ -9,7 +9,6 @@ import {
   markConversationRead,
   sendMessageInConversation,
   sendMessageToUser,
-  unblockUser,
 } from '@/lib/api/messaging';
 import { useAuth } from '@/lib/hooks/useAuth';
 
@@ -85,8 +84,4 @@ export function useMarkConversationRead() {
 
 export function useBlockUser() {
   return useMutation({ mutationFn: (username: string) => blockUser(username) });
-}
-
-export function useUnblockUser() {
-  return useMutation({ mutationFn: (username: string) => unblockUser(username) });
 }

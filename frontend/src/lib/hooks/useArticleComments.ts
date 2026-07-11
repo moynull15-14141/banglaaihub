@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createEditorialComment,
-  deleteEditorialComment,
   listEditorialComments,
   resolveEditorialComment,
   type EditorialCommentKind,
@@ -36,14 +35,6 @@ export function useResolveEditorialComment(slug: string) {
   return useMutation({
     mutationFn: ({ commentId, resolved }: { commentId: string; resolved: boolean }) =>
       resolveEditorialComment(commentId, resolved),
-    onSuccess: invalidate,
-  });
-}
-
-export function useDeleteEditorialComment(slug: string) {
-  const invalidate = useInvalidateEditorialComments(slug);
-  return useMutation({
-    mutationFn: (commentId: string) => deleteEditorialComment(commentId),
     onSuccess: invalidate,
   });
 }

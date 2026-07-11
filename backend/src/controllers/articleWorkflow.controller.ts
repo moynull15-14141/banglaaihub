@@ -116,6 +116,7 @@ export async function resolveEditorialComment(req: Request, res: Response): Prom
 
 export async function removeEditorialComment(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
+  await requireEditorialAccess(user);
   await ArticleCommentService.remove(requireParam(req, 'commentId'), user);
   sendSuccess(res, { message: 'Comment deleted.' });
 }

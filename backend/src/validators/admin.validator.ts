@@ -53,6 +53,14 @@ export const rejectReportSchema = z.object({
 });
 export type RejectReportInput = z.infer<typeof rejectReportSchema>;
 
+// Mirrors rejectReportSchema — POST /admin/resources/:id/reject previously
+// read req.body.reason with only a typeof check (no length cap, no schema),
+// unlike every other reason field in this file.
+export const rejectResourceSchema = z.object({
+  reason: z.string().max(500).optional(),
+});
+export type RejectResourceInput = z.infer<typeof rejectResourceSchema>;
+
 export const listAuditLogsQuerySchema = z.object({
   actor_id: z.string().uuid().optional(),
   target_type: z.string().optional(),

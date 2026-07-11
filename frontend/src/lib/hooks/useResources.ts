@@ -16,7 +16,6 @@ import {
   listResources,
   logResourceShare,
   removeResourceBookmark,
-  replaceResourceAttachment,
   reorderResourceAttachments,
   reportResource,
   updateResource,
@@ -148,10 +147,10 @@ export function useToggleResourceBookmark(slug: string) {
 }
 
 // `slug` is taken per-call, not baked into the hook — unlike
-// useDeleteResourceAttachment/useReplaceResourceAttachment/
-// useReorderResourceAttachments below, this one is also used from the
-// Submit wizard, where no slug exists yet when the hook is first rendered
-// (the resource is created, THEN its queued attachments are uploaded).
+// useDeleteResourceAttachment/useReorderResourceAttachments below, this one
+// is also used from the Submit wizard, where no slug exists yet when the
+// hook is first rendered (the resource is created, THEN its queued
+// attachments are uploaded).
 export function useAddResourceAttachment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -177,15 +176,6 @@ export function useDeleteResourceAttachment(slug: string) {
   const invalidate = useInvalidateResource(slug);
   return useMutation({
     mutationFn: (fileId: string) => deleteResourceAttachment(slug, fileId),
-    onSuccess: invalidate,
-  });
-}
-
-export function useReplaceResourceAttachment(slug: string) {
-  const invalidate = useInvalidateResource(slug);
-  return useMutation({
-    mutationFn: ({ fileId, file }: { fileId: string; file: File }) =>
-      replaceResourceAttachment(slug, fileId, file),
     onSuccess: invalidate,
   });
 }
