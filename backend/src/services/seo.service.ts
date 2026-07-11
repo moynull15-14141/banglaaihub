@@ -133,9 +133,13 @@ export class SeoService {
     return Math.round((points / max) * 100);
   }
 
-  // Admin SEO dashboard (Phase 5A-2) — deliberately no per-article analytics
-  // (views/CTR) per the brief's own scope cut; every number here is derived
-  // straight from Article/Resource fields already in the database.
+  // Admin SEO dashboard (Phase 5A-2). Originally aggregate-only by design
+  // ("no per-article analytics" meant no views/CTR, which still holds —
+  // that data isn't tracked per-article at all) — but the per-article score
+  // itself was already computed right here for the average and just
+  // discarded, leaving editors with a single number and no way to find
+  // *which* article to act on. `articles` below surfaces that same
+  // already-computed score per article instead of throwing it away.
   static async getDashboard(): Promise<{
     article_count: number;
     average_score: number;
@@ -146,10 +150,11 @@ export class SeoService {
     low_word_count: number;
     duplicate_titles: { title: string; count: number }[];
     duplicate_descriptions: { description: string; count: number }[];
+    articles: { slug: string; title: string; status: string; score: number }[];
   }> {
     const articles = await prisma.article.findMany({
       where: { resource: { deletedAt: null } },
-      include: { resource: { select: { title: true, slug: true, deletedAt: true } } },
+      include: { resource: { select: { title: true, slug: true, status: true, deletedAt: true } } },
     });
 
     if (articles.length === 0) {
@@ -163,6 +168,7 @@ export class SeoService {
         low_word_count: 0,
         duplicate_titles: [],
         duplicate_descriptions: [],
+        articles: [],
       };
     }
 
@@ -175,9 +181,17 @@ export class SeoService {
 
     const titleCounts = new Map<string, number>();
     const descriptionCounts = new Map<string, number>();
+    const perArticle: { slug: string; title: string; status: string; score: number }[] = [];
 
     for (const article of articles) {
-      totalScore += this.computeScore(article);
+      const score = this.computeScore(article);
+      totalScore += score;
+      perArticle.push({
+        slug: article.resource.slug,
+        title: article.resource.title,
+        status: article.resource.status,
+        score,
+      });
 
       if (!article.seoDescription?.trim() && !article.excerpt?.trim()) missingMetaDescription += 1;
       if (!article.featuredImageUrl) missingOgImage += 1;
@@ -194,6 +208,10 @@ export class SeoService {
       if (descriptionKey) descriptionCounts.set(descriptionKey, (descriptionCounts.get(descriptionKey) ?? 0) + 1);
     }
 
+    // Worst-first — the whole point of surfacing this list is "which article
+    // needs attention," not just "here's every article."
+    perArticle.sort((a, b) => a.score - b.score);
+
     return {
       article_count: articles.length,
       average_score: Math.round(totalScore / articles.length),
@@ -208,6 +226,7 @@ export class SeoService {
       duplicate_descriptions: Array.from(descriptionCounts.entries())
         .filter(([, count]) => count > 1)
         .map(([description, count]) => ({ description, count })),
+      articles: perArticle,
     };
   }
 }

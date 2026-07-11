@@ -40,7 +40,10 @@ function AssigneePicker({ onSelect }: { onSelect: (userId: string, label: string
     enabled: open && debouncedQuery.trim().length > 1,
   });
 
-  const results = (data?.data as { id: string; username: string; display_name: string | null }[] | undefined) ?? [];
+  const results =
+    (data?.data as
+      | { id: string; username: string; display_name: string | null; avatar_url: string | null }[]
+      | undefined) ?? [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -73,6 +76,11 @@ function AssigneePicker({ onSelect }: { onSelect: (userId: string, label: string
                     }}
                     className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
                   >
+                    <UserAvatar
+                      avatarUrl={person.avatar_url}
+                      name={person.display_name ?? person.username}
+                      className="size-6 shrink-0"
+                    />
                     <span className="truncate">{person.display_name ?? person.username}</span>
                     <span className="truncate text-xs text-muted-foreground">@{person.username}</span>
                   </button>
@@ -113,7 +121,7 @@ export function AssignmentPanel({ slug }: AssignmentPanelProps) {
                 {assignment ? (
                   <div className="mt-1 flex items-center gap-2">
                     <UserAvatar
-                      avatarUrl={null}
+                      avatarUrl={assignment.assigned_to.avatar_url}
                       name={assignment.assigned_to.display_name ?? assignment.assigned_to.username}
                       className="size-6"
                     />

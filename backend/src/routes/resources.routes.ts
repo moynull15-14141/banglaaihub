@@ -31,7 +31,14 @@ const reportLimiter = createRateLimiter({ windowMs: 24 * 60 * 60 * 1000, max: 20
 // Mounted at /resources
 const resourcesRouter = Router();
 
-resourcesRouter.get('/', validate(listResourcesQuerySchema, 'query'), resourcesController.list);
+// authenticateOptional (not authenticate) — this list must stay reachable
+// anonymously (public browse/search), but still needs req.user populated
+// when the caller IS logged in: ResourceService.list()'s canModerate check
+// (resource:approve/resource:edit_any) is what lets a `status` filter apply
+// at all instead of silently forcing `approved` — without this, no admin
+// page built on this endpoint (e.g. the Articles list's workflow-state
+// tabs) could ever see a non-approved resource, logged in or not.
+resourcesRouter.get('/', authenticateOptional, validate(listResourcesQuerySchema, 'query'), resourcesController.list);
 resourcesRouter.post(
   '/',
   authenticate,

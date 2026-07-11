@@ -18,10 +18,25 @@ import type { ListResourcesParams, ResourceStatus } from '@/types/resource';
 
 const PAGE_SIZE = 20;
 
-type ArticleTab = 'draft' | 'scheduled' | 'approved' | 'archived';
+// `idea` deliberately excluded — createResource() always creates articles as
+// `draft` (resources.service.ts), so `idea` is a reachable enum value with
+// no real path into it today; a tab for it would only ever be empty.
+type ArticleTab =
+  | 'draft'
+  | 'in_review'
+  | 'seo_review'
+  | 'needs_changes'
+  | 'ready_to_publish'
+  | 'scheduled'
+  | 'approved'
+  | 'archived';
 
 const TAB_LABELS: Record<ArticleTab, string> = {
   draft: 'Drafts',
+  in_review: 'In Review',
+  seo_review: 'SEO Review',
+  needs_changes: 'Needs Changes',
+  ready_to_publish: 'Ready to Publish',
   scheduled: 'Scheduled',
   approved: 'Published',
   archived: 'Archived',
@@ -76,7 +91,7 @@ export function ArticlesListView() {
         </Button>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 overflow-x-auto">
         <Tabs value={tab} onValueChange={(value) => updateParams({ tab: value })}>
           <TabsList>
             {(Object.keys(TAB_LABELS) as ArticleTab[]).map((value) => (

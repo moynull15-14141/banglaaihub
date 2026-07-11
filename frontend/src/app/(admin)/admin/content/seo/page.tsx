@@ -1,19 +1,26 @@
 'use client';
 
+import Link from 'next/link';
 import { AlertTriangle, FileText, Image as ImageIcon, Link2, TrendingUp } from 'lucide-react';
 import { PageContainer } from '@/components/common/PageContainer';
 import { LoadingScreen } from '@/components/common/LoadingScreen';
 import { ErrorState } from '@/components/common/ErrorState';
+import { EmptyState } from '@/components/common/EmptyState';
 import { StatCard } from '@/components/common/StatCard';
 import { RoleGuard } from '@/components/common/RoleGuard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/admin/moderation/StatusBadge';
+import { ROUTES } from '@/lib/constants/routes';
 import { useSeoDashboard } from '@/lib/hooks/useSeo';
+import type { SeoDashboardArticle } from '@/lib/api/seo';
+import type { ResourceStatus } from '@/types/resource';
 
 // Gated the same tier as the Articles nav entry (content:edit, editor+) —
 // this measures the content editors themselves author, not an admin-only
-// concern. No per-article analytics here (views/CTR) — explicitly out of
-// scope per the brief; every number is derived straight from Article fields.
+// concern. No per-article analytics here (views/CTR) — that data isn't
+// tracked per-article anywhere yet; everything below is derived straight
+// from Article/Resource fields already in the database.
 export default function AdminSeoDashboardPage() {
   return (
     <RoleGuard allowedRoles={['editor', 'admin', 'super_admin']}>
@@ -67,7 +74,76 @@ function SeoDashboardContent() {
           emptyLabel="No duplicate descriptions found."
         />
       </div>
+
+      <div className="mt-6">
+        <ArticleScoreTable articles={data.articles} />
+      </div>
     </PageContainer>
+  );
+}
+
+function scoreColor(score: number): string {
+  if (score >= 80) return 'text-emerald-600 dark:text-emerald-400';
+  if (score >= 50) return 'text-amber-600 dark:text-amber-400';
+  return 'text-destructive';
+}
+
+// The whole point of a "dashboard" is finding what needs fixing — a single
+// average score gives no way to act on it. This surfaces the same per-article
+// score the average is built from (worst-first, per SeoService.getDashboard),
+// each row linking straight into that article's editor.
+function ArticleScoreTable({ articles }: { articles: SeoDashboardArticle[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Articles by SEO score</CardTitle>
+        <CardDescription>Worst-scoring first — click a row to open it in the editor.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {articles.length === 0 ? (
+          <EmptyState title="No articles yet" description="Scores will appear here once articles are created." />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/60 text-xs text-muted-foreground">
+                <tr>
+                  <th scope="col" className="px-4 py-2.5 text-left font-medium">
+                    Title
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-left font-medium">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium">
+                    SEO score
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {articles.map((article) => (
+                  <tr key={article.slug} className="hover:bg-muted/30">
+                    <td className="max-w-96 px-4 py-3">
+                      <Link
+                        href={ROUTES.adminContentArticleEdit(article.slug)}
+                        className="line-clamp-1 font-medium hover:underline"
+                      >
+                        {article.title}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={article.status as ResourceStatus} />
+                    </td>
+                    <td className={`px-4 py-3 text-right font-semibold tabular-nums ${scoreColor(article.score)}`}>
+                      {article.score}
+                      <span className="font-normal text-muted-foreground">/100</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -189,7 +189,11 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
     language: resource.language,
     license: resource.license,
     external_url: resource.externalUrl,
-    thumbnail_url: thumbnailUrl,
+    // Articles have no dedicated thumbnail field/UI (see ArticleEditorView's
+    // "Featured image", which only writes article.featured_image_url) — fall
+    // back to that so resource cards (category pages, feed, listings) have
+    // something to render instead of the ImageOff placeholder.
+    thumbnail_url: thumbnailUrl ?? (resource.type === 'article' ? articleFeaturedImageUrl : null),
     documentation_url: documentationUrl,
     attachments,
     attachment_count: resource.files.length,

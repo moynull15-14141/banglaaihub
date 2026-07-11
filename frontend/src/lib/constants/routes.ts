@@ -54,6 +54,7 @@ export const ROUTES = {
   adminUsers: '/admin/users',
   adminReports: '/admin/reports',
   adminBadges: '/admin/badges',
+  adminCategories: '/admin/categories',
   adminContributorApplications: '/admin/contributor-applications',
   adminContributorApplication: (id: string) => `/admin/contributor-applications/${id}`,
   adminSearchAnalytics: '/admin/search-analytics',

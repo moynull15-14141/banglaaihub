@@ -16,6 +16,13 @@ export async function checkSeoDuplicate(
   return response.data.data;
 }
 
+export interface SeoDashboardArticle {
+  slug: string;
+  title: string;
+  status: string;
+  score: number;
+}
+
 export interface SeoDashboard {
   article_count: number;
   average_score: number;
@@ -26,6 +33,7 @@ export interface SeoDashboard {
   low_word_count: number;
   duplicate_titles: { title: string; count: number }[];
   duplicate_descriptions: { description: string; count: number }[];
+  articles: SeoDashboardArticle[];
 }
 
 export async function getSeoDashboard(): Promise<SeoDashboard> {

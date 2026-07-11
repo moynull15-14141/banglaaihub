@@ -2,6 +2,7 @@ import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
 import { writeAuditLog } from '../utils/auditLog';
 import type { AccessTokenPayload } from '../utils/jwt';
+import { Prisma } from '../generated/prisma/client';
 
 // 90s TTL — generous enough that a normal ~20s heartbeat (see frontend's
 // useArticleLock.ts) survives a couple of missed beats (tab backgrounded,
@@ -70,14 +71,31 @@ export class ArticleLockService {
       throw new ApiError(409, 'RESOURCE_LOCKED', 'This article is currently being edited by someone else.');
     }
 
-    const lock = await prisma.articleLock.upsert({
-      where: { resourceId: resource.id },
-      update: { lockedById: requester.userId, lockedAt: new Date(), lastHeartbeatAt: new Date() },
-      create: { resourceId: resource.id, lockedById: requester.userId },
-      include: { lockedBy: { select: { id: true, username: true, displayName: true } } },
-    });
-
-    return toLockDto(lock);
+    try {
+      const lock = await prisma.articleLock.upsert({
+        where: { resourceId: resource.id },
+        update: { lockedById: requester.userId, lockedAt: new Date(), lastHeartbeatAt: new Date() },
+        create: { resourceId: resource.id, lockedById: requester.userId },
+        include: { lockedBy: { select: { id: true, username: true, displayName: true } } },
+      });
+      return toLockDto(lock);
+    } catch (error) {
+      // Two acquire/heartbeat calls landing within the same instant (e.g. a
+      // release immediately followed by a re-acquire, or an effect firing
+      // twice) can both pass the findUnique check above and then both hit
+      // upsert's create branch — the second loses the race with a unique
+      // violation on resourceId instead of Prisma retrying it as an update.
+      // By the time we're here the row now exists, so just re-read and
+      // return it instead of surfacing a 500 for a harmless double-write.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const lock = await prisma.articleLock.findUniqueOrThrow({
+          where: { resourceId: resource.id },
+          include: { lockedBy: { select: { id: true, username: true, displayName: true } } },
+        });
+        return toLockDto(lock);
+      }
+      throw error;
+    }
   }
 
   static async release(slug: string, requester: AccessTokenPayload): Promise<void> {

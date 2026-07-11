@@ -30,8 +30,8 @@ export interface ArticleAssignment {
   assigned_at: string;
   due_date: string | null;
   status: AssignmentStatus;
-  assigned_to: { id: string; username: string; display_name: string | null };
-  assigned_by: { id: string; username: string; display_name: string | null };
+  assigned_to: { id: string; username: string; display_name: string | null; avatar_url: string | null };
+  assigned_by: { id: string; username: string; display_name: string | null; avatar_url: string | null };
 }
 
 export interface AssignedToMeEntry {

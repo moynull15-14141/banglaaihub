@@ -8,6 +8,7 @@ import {
   Info,
   MessageSquareText,
   Newspaper,
+  NotebookText,
   Rss,
   Search,
   Wrench,
@@ -31,6 +32,11 @@ export const MAIN_NAV_LINKS = [
   { href: ROUTES.prompts, label: 'Prompts', icon: MessageSquareText },
   { href: ROUTES.projects, label: 'Projects', icon: FolderKanban },
   { href: ROUTES.news, label: 'News', icon: Newspaper },
+  // Was never added to this list when the Articles CMS route shipped (Phase
+  // 5A-1) — the /articles page and its listing worked fine, but a published
+  // article was unreachable from any nav, only findable via a direct/shared
+  // link or an internal admin link (e.g. the SEO preview panel).
+  { href: ROUTES.articles, label: 'Articles', icon: NotebookText },
   { href: ROUTES.categories, label: 'Categories', icon: Folder },
   { href: ROUTES.search, label: 'Search', icon: Search },
   { href: ROUTES.about, label: 'About', icon: Info },

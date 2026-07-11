@@ -1,6 +1,7 @@
 import { prisma } from '../config/database';
 import { meilisearchClient, USERS_INDEX_UID } from '../config/meilisearch';
 import { resolveContributorLevel } from '../utils/contributorLevel';
+import { StorageService } from './storage.service';
 import type { PaginationParams } from '../utils/pagination';
 
 export interface UserSearchDocument {
@@ -145,8 +146,20 @@ export class UserSearchService {
       hitsPerPage: number;
     };
 
+    // The index stores User.avatarUrl's raw R2 key as-is (see
+    // toUserSearchDocument) — a signed URL would go stale before the next
+    // reindex, so it's resolved here at read time instead, same as every
+    // other DTO that echoes an avatar back (StorageService.resolveAvatarUrl's
+    // own comment).
+    const data = await Promise.all(
+      finiteResponse.hits.map(async (hit) => ({
+        ...hit,
+        avatar_url: await StorageService.resolveAvatarUrl(hit.avatar_url),
+      })),
+    );
+
     return {
-      data: finiteResponse.hits,
+      data,
       meta: {
         total: finiteResponse.totalHits,
         page: finiteResponse.page,

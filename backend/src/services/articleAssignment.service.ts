@@ -5,16 +5,22 @@ import type { AccessTokenPayload } from '../utils/jwt';
 import type { AssignmentRole } from '../generated/prisma/client';
 import { ActivityService } from './activity.service';
 import { NotificationService } from './notification.service';
+import { StorageService } from './storage.service';
 
-function toAssignmentDto(assignment: {
+async function toAssignmentDto(assignment: {
   id: string;
   role: string;
   assignedAt: Date;
   dueDate: Date | null;
   status: string;
-  assignedTo: { id: string; username: string; displayName: string | null };
-  assignedBy: { id: string; username: string; displayName: string | null };
-}): Record<string, unknown> {
+  assignedTo: { id: string; username: string; displayName: string | null; avatarUrl: string | null };
+  assignedBy: { id: string; username: string; displayName: string | null; avatarUrl: string | null };
+}): Promise<Record<string, unknown>> {
+  const [assignedToAvatarUrl, assignedByAvatarUrl] = await Promise.all([
+    StorageService.resolveAvatarUrl(assignment.assignedTo.avatarUrl),
+    StorageService.resolveAvatarUrl(assignment.assignedBy.avatarUrl),
+  ]);
+
   return {
     id: assignment.id,
     role: assignment.role,
@@ -25,11 +31,13 @@ function toAssignmentDto(assignment: {
       id: assignment.assignedTo.id,
       username: assignment.assignedTo.username,
       display_name: assignment.assignedTo.displayName,
+      avatar_url: assignedToAvatarUrl,
     },
     assigned_by: {
       id: assignment.assignedBy.id,
       username: assignment.assignedBy.username,
       display_name: assignment.assignedBy.displayName,
+      avatar_url: assignedByAvatarUrl,
     },
   };
 }
@@ -44,11 +52,11 @@ export class ArticleAssignmentService {
     const assignments = await prisma.articleAssignment.findMany({
       where: { resourceId: resource.id },
       include: {
-        assignedTo: { select: { id: true, username: true, displayName: true } },
-        assignedBy: { select: { id: true, username: true, displayName: true } },
+        assignedTo: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        assignedBy: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
       },
     });
-    return assignments.map(toAssignmentDto);
+    return Promise.all(assignments.map(toAssignmentDto));
   }
 
   // Upsert on [resourceId, role] — reassigning a slot replaces it, it never
@@ -85,8 +93,8 @@ export class ArticleAssignmentService {
         dueDate: input.due_date ? new Date(input.due_date) : null,
       },
       include: {
-        assignedTo: { select: { id: true, username: true, displayName: true } },
-        assignedBy: { select: { id: true, username: true, displayName: true } },
+        assignedTo: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+        assignedBy: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
       },
     });
 

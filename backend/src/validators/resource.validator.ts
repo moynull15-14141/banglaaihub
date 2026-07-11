@@ -22,9 +22,15 @@ const RESOURCE_TYPES = [
   'article',
 ] as const;
 const LANGUAGES = ['bn', 'en', 'both'] as const;
-// `draft`/`scheduled`/`archived` are Phase 5A-1 additions used only by the
-// `article` ResourceType's editorial workflow — community-submitted resource
-// types never transition through them.
+// `draft`/`scheduled`/`archived` are Phase 5A-1 additions, and
+// `idea`/`in_review`/`seo_review`/`needs_changes`/`ready_to_publish` are
+// Phase 5A-3 (Editorial Workflow) additions — both sets used only by the
+// `article` ResourceType's editorial workflow; community-submitted resource
+// types never transition through them. Must mirror the Prisma `ResourceStatus`
+// enum (schema.prisma) exactly — the 5A-3 states were added there but missed
+// here, which silently made the list endpoint's `status` filter unable to
+// return an article sitting in any of those states (400 VALIDATION_ERROR),
+// so e.g. the admin Articles list had no way to show an in-review article.
 const RESOURCE_STATUSES = [
   'pending',
   'approved',
@@ -33,6 +39,11 @@ const RESOURCE_STATUSES = [
   'draft',
   'scheduled',
   'archived',
+  'idea',
+  'in_review',
+  'seo_review',
+  'needs_changes',
+  'ready_to_publish',
 ] as const;
 // Phase 3B — `trending`/`updated`/`alpha` added. `trending` is Prisma-only
 // (resolveTrendingPage in resources.service.ts), not available on the
