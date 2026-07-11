@@ -8,3 +8,21 @@ export interface Category {
   sort_order: number;
   children?: Category[];
 }
+
+export interface CreateCategoryInput {
+  name: string;
+  slug?: string;
+  description?: string;
+  parent_id?: number;
+  icon?: string;
+  sort_order?: number;
+}
+
+export interface UpdateCategoryInput {
+  name?: string;
+  slug?: string;
+  description?: string;
+  parent_id?: number | null;
+  icon?: string;
+  sort_order?: number;
+}
