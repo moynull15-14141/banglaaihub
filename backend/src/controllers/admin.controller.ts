@@ -479,7 +479,14 @@ export async function getSearchAnalytics(_req: Request, res: Response): Promise<
 // because Render's free tier has no shell access, so an admin needs a way
 // to (re)index production data without one. Safe to call repeatedly —
 // both rebuildIndex() methods fully replace the index contents each time.
+//
+// configureIndex() must run BEFORE rebuildIndex() — it sets
+// filterableAttributes/sortableAttributes (status, type, etc.); without it
+// the index exists but every filtered search() call 500s with a MeiliSearch
+// "attribute not filterable" error, exactly what scripts/syncSearch.ts
+// already did in the right order and this endpoint originally missed.
 export async function rebuildSearchIndex(_req: Request, res: Response): Promise<void> {
+  await Promise.all([SearchService.configureIndex(), UserSearchService.configureIndex()]);
   const [resources, users] = await Promise.all([
     SearchService.rebuildIndex(),
     UserSearchService.rebuildIndex(),
