@@ -260,6 +260,17 @@ router.get(
   adminController.getSearchAnalytics,
 );
 
+// Re-syncs both MeiliSearch indexes from Postgres — the HTTP equivalent of
+// `npm run search:sync`/`search:sync:users`, added because Render's free
+// tier has no shell access to run those scripts directly. system:configure
+// (super_admin only) — this is an infra operation, not routine moderation.
+router.post(
+  '/search/rebuild-index',
+  authenticate,
+  authorize('system:configure'),
+  adminController.rebuildSearchIndex,
+);
+
 // --- Feed engine (Phase 4D) ---------------------------------------------------------
 // Weight/diversity tuning and announcements are platform-wide config — gated
 // at the broader admin:manage tier. Pin management reuses resource:feature

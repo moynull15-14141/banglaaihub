@@ -11,6 +11,7 @@ import { PlatformSettingsService } from '../services/platform-settings.service';
 import { ReportService } from '../services/report.service';
 import { ResourceService } from '../services/resources.service';
 import { SearchService } from '../services/search.service';
+import { UserSearchService } from '../services/user-search.service';
 import { UserService } from '../services/users.service';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/apiResponse';
@@ -470,4 +471,18 @@ export async function removeFeedAnnouncementImage(req: Request, res: Response): 
 export async function getSearchAnalytics(_req: Request, res: Response): Promise<void> {
   const summary = await SearchService.getSearchAnalyticsSummary();
   sendSuccess(res, summary);
+}
+
+// Re-syncs both MeiliSearch indexes (resources + users) straight from
+// Postgres — the HTTP-triggerable equivalent of running
+// `npm run search:sync && npm run search:sync:users` from a shell. Added
+// because Render's free tier has no shell access, so an admin needs a way
+// to (re)index production data without one. Safe to call repeatedly —
+// both rebuildIndex() methods fully replace the index contents each time.
+export async function rebuildSearchIndex(_req: Request, res: Response): Promise<void> {
+  const [resources, users] = await Promise.all([
+    SearchService.rebuildIndex(),
+    UserSearchService.rebuildIndex(),
+  ]);
+  sendSuccess(res, { resources_indexed: resources.count, users_indexed: users.count });
 }
