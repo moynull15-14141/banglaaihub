@@ -1,6 +1,7 @@
 import { prisma } from '../config/database';
 import { meilisearchClient, RESOURCES_INDEX_UID } from '../config/meilisearch';
 import { resourceInclude, type ResourceWithRelations } from './resources.service';
+import { StorageService } from './storage.service';
 import type { PaginationParams } from '../utils/pagination';
 import type { SearchQuery } from '../validators/search.validator';
 
@@ -83,7 +84,11 @@ function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
   };
 }
 
-function toSearchResultDto(doc: SearchDocument): Record<string, unknown> {
+// The index stores Resource.thumbnailUrl's raw value as-is (R2 key or
+// external URL, see toSearchDocument above) — a signed URL would go stale
+// before the next reindex, so it's resolved here at read time instead, same
+// as UserSearchService.search() already does for avatar_url.
+async function toSearchResultDto(doc: SearchDocument): Promise<Record<string, unknown>> {
   return {
     id: doc.id,
     slug: doc.slug,
@@ -113,7 +118,7 @@ function toSearchResultDto(doc: SearchDocument): Record<string, unknown> {
     avg_rating: doc.avg_rating,
     review_count: doc.review_count,
     published_at: doc.published_at,
-    thumbnail_url: doc.thumbnail_url,
+    thumbnail_url: await StorageService.resolveUrl(doc.thumbnail_url),
   };
 }
 
@@ -296,7 +301,7 @@ export class SearchService {
     };
 
     const result = {
-      data: finiteResponse.hits.map(toSearchResultDto),
+      data: await Promise.all(finiteResponse.hits.map(toSearchResultDto)),
       meta: {
         total: finiteResponse.totalHits,
         page: finiteResponse.page,
