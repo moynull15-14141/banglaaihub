@@ -244,6 +244,13 @@ export class SearchService {
     data: unknown[];
     meta: { total: number; page: number; limit: number; hasNextPage: boolean };
   }> {
+    // Querying an index that doesn't exist yet (e.g. a fresh Meilisearch
+    // Cloud instance before the first rebuild-index call) throws
+    // index_not_found and previously 500'd the whole search page — this
+    // guarantees the (possibly empty) index exists first, same fix as
+    // indexResource()'s own ensureIndexExists() call below.
+    await this.ensureIndexExists();
+
     const filters: string[] = ['status = approved'];
     if (query.type) filters.push(`type = ${query.type}`);
     if (query.language) filters.push(`language = ${query.language}`);
@@ -307,6 +314,7 @@ export class SearchService {
   // narrow field set (no description/tags needed for a dropdown suggestion).
   static async suggest(q: string): Promise<{ id: string; slug: string; title: string; type: string }[]> {
     if (!q.trim()) return [];
+    await this.ensureIndexExists();
 
     const response = await this.index.search(q, {
       filter: 'status = approved',
@@ -325,6 +333,7 @@ export class SearchService {
   // Facet distribution for the license filter dropdown — real, currently-in-
   // use values, not a hardcoded list that drifts from what's actually there.
   static async getLicenseFacets(): Promise<{ license: string; count: number }[]> {
+    await this.ensureIndexExists();
     const response = await this.index.search('', {
       filter: 'status = approved',
       facets: ['license'],

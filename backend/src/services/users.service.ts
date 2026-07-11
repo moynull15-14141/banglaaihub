@@ -42,6 +42,36 @@ const TOP_TIER_ROLES = ['admin', 'super_admin'];
 const includesTopTierRole = (roleNames: string[]): boolean =>
   roleNames.some((name) => TOP_TIER_ROLES.includes(name));
 
+// Self-account-action guard: no admin action here (role change, ban/suspend,
+// delete) can ever target the actor's own account, regardless of tier. This
+// prevents both accidental self-lockout (a mis-click removing your own
+// super_admin role) and a compromised admin session self-banning to cover
+// tracks. Ask another admin to act on your account instead — same discipline
+// most platforms enforce for exactly this reason.
+function assertNotSelfTarget(actorId: string, targetId: string, action: string): void {
+  if (actorId === targetId) {
+    throw new ApiError(403, 'FORBIDDEN', `You cannot ${action} your own account. Ask another admin to do it.`);
+  }
+}
+
+// Last-super-admin guard: blocks any action that would leave the platform
+// with zero super_admins (which nobody could then undo without a direct
+// database edit). Only fires when the target actually holds super_admin —
+// demoting/banning/deleting a non-super_admin is never affected.
+async function assertNotLastSuperAdmin(targetId: string): Promise<void> {
+  const targetRoles = await getUserRoleNames(targetId);
+  if (!targetRoles.includes('super_admin')) return;
+
+  const superAdminCount = await prisma.userRole.count({ where: { role: { name: 'super_admin' } } });
+  if (superAdminCount <= 1) {
+    throw new ApiError(
+      400,
+      'VALIDATION_ERROR',
+      'This is the last super_admin — promote another user to super_admin first.',
+    );
+  }
+}
+
 // The Users page's "Staff" scope (see listUsersAdmin) — every role that
 // grants some admin-panel page (mirrors frontend/src/components/admin/
 // adminNavLinks.ts's ADMIN_NAV_LINKS, plus `moderator`, which carries
@@ -828,6 +858,11 @@ export class UserService {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
     }
 
+    assertNotSelfTarget(actorId, id, 'change the status of');
+    if (input.status !== 'active') {
+      await assertNotLastSuperAdmin(id);
+    }
+
     await prisma.user.update({ where: { id }, data: { status: input.status } });
 
     // Suspending/banning a user must not leave their existing sessions valid —
@@ -859,6 +894,11 @@ export class UserService {
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user || user.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
+    }
+
+    assertNotSelfTarget(actorId, id, 'change the roles of');
+    if (!input.role_names.includes('super_admin')) {
+      await assertNotLastSuperAdmin(id);
     }
 
     const roles = await prisma.role.findMany({ where: { name: { in: input.role_names } } });
@@ -904,6 +944,9 @@ export class UserService {
     if (!user || user.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
     }
+
+    assertNotSelfTarget(actorId, id, 'delete');
+    await assertNotLastSuperAdmin(id);
 
     await prisma.$transaction([
       prisma.user.update({ where: { id }, data: { deletedAt: new Date() } }),

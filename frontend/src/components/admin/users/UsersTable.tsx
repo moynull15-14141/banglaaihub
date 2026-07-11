@@ -48,7 +48,20 @@ function RowActionsMenu({
   onChangeStatus,
   onDelete,
   onToggleVerified,
-}: UserRowActions & { user: AdminUser }) {
+  isSelf,
+}: UserRowActions & { user: AdminUser; isSelf: boolean }) {
+  // Defense-in-depth only — the backend (users.service.ts's
+  // assertNotSelfTarget) is the real guard; this just keeps an admin from
+  // clicking a self-targeted action that's guaranteed to 403 anyway, and
+  // makes it visually clear these actions never apply to your own row.
+  if (isSelf) {
+    return (
+      <span className="text-xs text-muted-foreground" title="You cannot change your own roles, status, or delete your own account.">
+        This is you
+      </span>
+    );
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -109,9 +122,10 @@ interface UsersTableProps extends UserRowActions {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  currentUserId?: string;
 }
 
-export function UsersTable({ users, isLoading, isError, onRetry, ...actions }: UsersTableProps) {
+export function UsersTable({ users, isLoading, isError, onRetry, currentUserId, ...actions }: UsersTableProps) {
   if (isLoading) {
     return <TableSkeleton />;
   }
@@ -185,7 +199,7 @@ export function UsersTable({ users, isLoading, isError, onRetry, ...actions }: U
                   {formatDate(user.created_at)}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <RowActionsMenu user={user} {...actions} />
+                  <RowActionsMenu user={user} isSelf={user.id === currentUserId} {...actions} />
                 </td>
               </tr>
             ))}
@@ -206,7 +220,7 @@ export function UsersTable({ users, isLoading, isError, onRetry, ...actions }: U
                     <p className="truncate text-xs text-muted-foreground">@{user.username}</p>
                   </div>
                 </div>
-                <RowActionsMenu user={user} {...actions} />
+                <RowActionsMenu user={user} isSelf={user.id === currentUserId} {...actions} />
               </div>
               <RoleBadges roles={user.roles} />
               <div className="flex items-center justify-between text-xs text-muted-foreground">

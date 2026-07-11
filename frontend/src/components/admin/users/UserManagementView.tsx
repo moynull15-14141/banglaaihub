@@ -9,6 +9,7 @@ import { ConfirmActionDialog } from '@/components/admin/moderation/ConfirmAction
 import { UsersFilters, type UsersScope } from '@/components/admin/users/UsersFilters';
 import { UsersTable } from '@/components/admin/users/UsersTable';
 import { UserRolesDialog } from '@/components/admin/users/UserRolesDialog';
+import { useAuth } from '@/lib/hooks/useAuth';
 import {
   useAdminUsersList,
   useDeleteUser,
@@ -55,6 +56,7 @@ const STATUS_CHANGE_COPY: Record<
 export function UserManagementView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user: currentUser } = useAuth();
 
   const scope = (searchParams.get('scope') as UsersScope | null) ?? 'all';
   const status = (searchParams.get('status') as AdminUser['status'] | null) ?? undefined;
@@ -139,6 +141,7 @@ export function UserManagementView() {
           onChangeStatus={(user, nextStatus) => setStatusTarget({ user, status: nextStatus })}
           onDelete={setDeleteTarget}
           onToggleVerified={handleToggleVerified}
+          currentUserId={currentUser?.id}
         />
 
         {data ? (

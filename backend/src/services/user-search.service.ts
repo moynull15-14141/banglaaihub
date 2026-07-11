@@ -125,6 +125,10 @@ export class UserSearchService {
     },
     pagination: PaginationParams,
   ): Promise<{ data: unknown[]; meta: { total: number; page: number; limit: number; hasNextPage: boolean } }> {
+    // Same fix as SearchService.search() — an index that doesn't exist yet
+    // throws index_not_found instead of returning zero hits.
+    await this.ensureIndexExists();
+
     const filters: string[] = [];
     if (query.verified) filters.push('is_verified = true');
     if (query.contributor_level) filters.push(`contributor_level = "${escapeFilterValue(query.contributor_level)}"`);
