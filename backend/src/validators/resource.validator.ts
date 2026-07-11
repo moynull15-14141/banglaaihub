@@ -4,10 +4,12 @@ import { paperInputSchema } from './paper.validator';
 import { toolInputSchema } from './tool.validator';
 import { modelInputSchema } from './model.validator';
 import { promptInputSchema } from './prompt.validator';
+import { articleInputSchema } from './article.validator';
 
 // Full set per doc 10's ResourceType enum (doc 13's example schema only shows
 // 5 of the 7 — dataset/paper/tool/tutorial/prompt — omitting project/news,
 // which are still valid per the locked Prisma enum). `model` added Phase 3A.
+// `article` added Phase 5A-1 (Content Platform) — see article.validator.ts.
 const RESOURCE_TYPES = [
   'dataset',
   'paper',
@@ -17,9 +19,21 @@ const RESOURCE_TYPES = [
   'project',
   'news',
   'model',
+  'article',
 ] as const;
 const LANGUAGES = ['bn', 'en', 'both'] as const;
-const RESOURCE_STATUSES = ['pending', 'approved', 'rejected', 'flagged'] as const;
+// `draft`/`scheduled`/`archived` are Phase 5A-1 additions used only by the
+// `article` ResourceType's editorial workflow — community-submitted resource
+// types never transition through them.
+const RESOURCE_STATUSES = [
+  'pending',
+  'approved',
+  'rejected',
+  'flagged',
+  'draft',
+  'scheduled',
+  'archived',
+] as const;
 // Phase 3B — `trending`/`updated`/`alpha` added. `trending` is Prisma-only
 // (resolveTrendingPage in resources.service.ts), not available on the
 // MeiliSearch-backed /search endpoint (see search.validator.ts's own
@@ -36,6 +50,22 @@ const SORT_OPTIONS = [
 ] as const;
 const VISIBILITIES = ['public', 'unlisted', 'private'] as const;
 
+// Phase 5A-2 (SEO Engine) — article-only permalink override. Generic hygiene
+// blacklist (not a routing-collision list — /articles/[slug] is nested, so
+// none of these actually collide with a real Next.js route today) matching
+// what enterprise SEO tools conventionally flag.
+const RESERVED_SLUGS = new Set([
+  'admin', 'api', 'new', 'edit', 'delete', 'index', 'null', 'undefined',
+  'article', 'articles', 'draft', 'preview', 'search', 'feed',
+]);
+
+export const articleSlugSchema = z
+  .string()
+  .min(3)
+  .max(200)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, numbers, and hyphens only.')
+  .refine((value) => !RESERVED_SLUGS.has(value), 'This URL is reserved — choose a different one.');
+
 // Comma-separated tag slugs, e.g. `?tags=bangla,llm` — mirrors how tags are
 // already comma-separated everywhere else in this codebase's forms.
 const commaSeparatedTags = z
@@ -47,6 +77,10 @@ export const createResourceSchema = z.object({
   title: z.string().min(5).max(300).trim(),
   description: z.string().min(50).max(5000).trim().optional(),
   type: z.enum(RESOURCE_TYPES),
+  // Article-only (see resources.service.ts's create()/update()) — every
+  // other resource type keeps its slug fully auto-derived from the title,
+  // unchanged from before this field existed.
+  slug: articleSlugSchema.optional(),
   category_id: z.number().int().positive().optional(),
   tags: z.array(z.string().max(50)).max(10).optional(),
   language: z.enum(LANGUAGES).optional(),
@@ -59,6 +93,7 @@ export const createResourceSchema = z.object({
   tool: toolInputSchema.optional(),
   model: modelInputSchema.optional(),
   prompt: promptInputSchema.optional(),
+  article: articleInputSchema.optional(),
 });
 export type CreateResourceInput = z.infer<typeof createResourceSchema>;
 
@@ -91,7 +126,9 @@ export type ListResourcesQuery = z.infer<typeof listResourcesQuerySchema>;
 // `dataset` is the default so the pre-existing dataset-file upload call
 // sites (which never sent `kind`) keep working unchanged.
 export const uploadResourceFileQuerySchema = z.object({
-  kind: z.enum(['dataset', 'thumbnail', 'pdf', 'asset', 'documentation', 'model']).default('dataset'),
+  kind: z
+    .enum(['dataset', 'thumbnail', 'pdf', 'asset', 'documentation', 'model', 'article_image'])
+    .default('dataset'),
 });
 export type UploadResourceFileQuery = z.infer<typeof uploadResourceFileQuerySchema>;
 

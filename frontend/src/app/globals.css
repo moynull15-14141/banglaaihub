@@ -128,7 +128,11 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Safety net: no single overflowing component (a too-wide nav, a
+       fixed-width table, …) should ever be able to push a horizontal
+       scrollbar onto the whole page — that component should scroll
+       internally instead. */
+    @apply bg-background text-foreground overflow-x-hidden;
   }
   html {
     @apply font-sans scroll-smooth;

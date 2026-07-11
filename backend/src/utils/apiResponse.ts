@@ -6,6 +6,10 @@ export interface ResponseMeta {
   limit?: number;
   hasNextPage?: boolean;
   unread_count?: number;
+  // Cursor-paginated endpoints (feed) don't expose a `total` — ranked order
+  // isn't a stable DB column, so there's no cheap total to compute.
+  next_cursor?: string | null;
+  mode?: string;
 }
 
 export function sendSuccess<T>(

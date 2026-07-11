@@ -1,4 +1,17 @@
-import { ClipboardList, Flag, LayoutDashboard, Search, Sparkles, Users } from 'lucide-react';
+import {
+  Award,
+  CalendarClock,
+  CalendarDays,
+  ClipboardList,
+  FileText,
+  Flag,
+  LayoutDashboard,
+  Rss,
+  Search,
+  Sparkles,
+  TrendingUp,
+  Users,
+} from 'lucide-react';
 import { ROUTES } from '@/lib/constants/routes';
 import type { RoleName } from '@/lib/constants/roles';
 
@@ -30,6 +43,7 @@ export const ADMIN_NAV_LINKS: {
     roles: ['editor', 'admin', 'super_admin'],
   },
   { href: ROUTES.adminUsers, label: 'Users', icon: Users, roles: ['admin', 'super_admin'] },
+  { href: ROUTES.adminBadges, label: 'Badges', icon: Award, roles: ['admin', 'super_admin'] },
   {
     href: ROUTES.adminReports,
     label: 'Reports',
@@ -41,6 +55,53 @@ export const ADMIN_NAV_LINKS: {
     label: 'Search Analytics',
     icon: Search,
     roles: ['admin', 'super_admin'],
+  },
+  {
+    href: ROUTES.adminFeed,
+    label: 'Feed Engine',
+    icon: Rss,
+    // Pin management needs resource:feature (editor tier); the page itself
+    // hides the admin:manage-only sections (weights, announcements) for a
+    // non-admin editor — see FeedAdminView.tsx.
+    roles: ['editor', 'admin', 'super_admin'],
+  },
+  {
+    href: ROUTES.adminContentArticles,
+    label: 'Articles',
+    icon: FileText,
+    // content:create/edit/publish are all editor-tier permissions (see
+    // backend/scripts/seed.ts) — same gating tier as the rest of the
+    // editorial-staff pages above.
+    roles: ['editor', 'admin', 'super_admin'],
+  },
+  {
+    href: ROUTES.adminContentSeo,
+    label: 'SEO Center',
+    icon: TrendingUp,
+    // Phase 5A-2 — gated content:edit (editor tier), same as Articles above.
+    roles: ['editor', 'admin', 'super_admin'],
+  },
+  {
+    href: ROUTES.adminContentEditorial,
+    label: 'Editorial Dashboard',
+    icon: ClipboardList,
+    // Phase 5A-3 — also visible to the non-hierarchical specialization
+    // roles (writer/seo_editor/publisher, see backend/scripts/seed.ts's
+    // SPECIALIZATION_ROLES) — each sees only what their own permissions
+    // actually unlock once inside the page itself.
+    roles: ['editor', 'admin', 'super_admin', 'writer', 'seo_editor', 'publisher'],
+  },
+  {
+    href: ROUTES.adminContentCalendar,
+    label: 'Content Calendar',
+    icon: CalendarDays,
+    roles: ['editor', 'admin', 'super_admin', 'publisher'],
+  },
+  {
+    href: ROUTES.adminContentScheduleQueue,
+    label: 'Schedule Queue',
+    icon: CalendarClock,
+    roles: ['editor', 'admin', 'super_admin', 'publisher'],
   },
 ];
 

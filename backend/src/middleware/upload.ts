@@ -4,6 +4,8 @@ import { ApiError } from '../utils/ApiError';
 import {
   AVATAR_ALLOWED_EXTENSIONS,
   AVATAR_MAX_FILE_SIZE,
+  COVER_ALLOWED_EXTENSIONS,
+  COVER_MAX_FILE_SIZE,
   CONTRIBUTOR_SAMPLE_ALLOWED_EXTENSIONS,
   CONTRIBUTOR_SAMPLE_MAX_FILE_SIZE,
   CONTRIBUTOR_SUPPORTING_ALLOWED_EXTENSIONS,
@@ -16,6 +18,7 @@ import {
   RESOURCE_ATTACHMENT_ALLOWED_EXTENSIONS,
   RESOURCE_ATTACHMENT_MAX_FILE_SIZE,
   THUMBNAIL_ALLOWED_EXTENSIONS,
+  THUMBNAIL_MAX_FILE_SIZE,
   TOOL_ASSET_ALLOWED_EXTENSIONS,
   TOOL_ASSET_MAX_FILE_SIZE,
 } from '../services/storage.service';
@@ -65,6 +68,7 @@ export const resourceUpload = createUploadMiddleware(
 );
 
 export const avatarUpload = createUploadMiddleware(AVATAR_ALLOWED_EXTENSIONS, AVATAR_MAX_FILE_SIZE);
+export const coverUpload = createUploadMiddleware(COVER_ALLOWED_EXTENSIONS, COVER_MAX_FILE_SIZE);
 
 // Union of sample + supporting-document extensions — `kind` (which allow-list
 // actually applies) arrives as a query param read after this middleware runs,
@@ -87,3 +91,14 @@ export const resourceAttachmentUpload = createUploadMiddleware(
   RESOURCE_ATTACHMENT_ALLOWED_EXTENSIONS,
   RESOURCE_ATTACHMENT_MAX_FILE_SIZE,
 );
+
+// POST/DELETE /admin/feed/announcements/:id/image — same allow-list/size cap
+// as resource thumbnails.
+export const feedAnnouncementImageUpload = createUploadMiddleware(
+  THUMBNAIL_ALLOWED_EXTENSIONS,
+  THUMBNAIL_MAX_FILE_SIZE,
+);
+
+// POST /posts — optional image attached in the same multipart request as
+// the post's text content.
+export const postImageUpload = createUploadMiddleware(THUMBNAIL_ALLOWED_EXTENSIONS, THUMBNAIL_MAX_FILE_SIZE);

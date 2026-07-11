@@ -1,4 +1,4 @@
-import { Ban, MoreHorizontal, Pencil, RotateCcw, ShieldOff, Trash2, Users } from 'lucide-react';
+import { Ban, BadgeCheck, MoreHorizontal, Pencil, RotateCcw, ShieldOff, Trash2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -27,6 +27,7 @@ export interface UserRowActions {
   onEditRoles: (user: AdminUser) => void;
   onChangeStatus: (user: AdminUser, status: 'active' | 'suspended' | 'banned') => void;
   onDelete: (user: AdminUser) => void;
+  onToggleVerified: (user: AdminUser) => void;
 }
 
 function RoleBadges({ roles }: { roles: string[] }) {
@@ -41,7 +42,13 @@ function RoleBadges({ roles }: { roles: string[] }) {
   );
 }
 
-function RowActionsMenu({ user, onEditRoles, onChangeStatus, onDelete }: UserRowActions & { user: AdminUser }) {
+function RowActionsMenu({
+  user,
+  onEditRoles,
+  onChangeStatus,
+  onDelete,
+  onToggleVerified,
+}: UserRowActions & { user: AdminUser }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -53,6 +60,10 @@ function RowActionsMenu({ user, onEditRoles, onChangeStatus, onDelete }: UserRow
         <DropdownMenuItem onClick={() => onEditRoles(user)}>
           <Pencil className="size-4" aria-hidden="true" />
           Edit roles
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onToggleVerified(user)}>
+          <BadgeCheck className="size-4" aria-hidden="true" />
+          {user.is_verified ? 'Unverify' : 'Verify'}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {user.status !== 'active' ? (
@@ -150,7 +161,12 @@ export function UsersTable({ users, isLoading, isError, onRetry, ...actions }: U
                   <div className="flex items-center gap-2">
                     <UserAvatar avatarUrl={user.avatar_url} name={user.display_name ?? user.username} />
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{user.display_name ?? user.username}</p>
+                      <p className="flex items-center gap-1 truncate font-medium">
+                        {user.display_name ?? user.username}
+                        {user.is_verified ? (
+                          <BadgeCheck className="size-3.5 shrink-0 text-brand" aria-label="Verified" />
+                        ) : null}
+                      </p>
                       <p className="truncate text-xs text-muted-foreground">
                         @{user.username} · {user.email}
                       </p>

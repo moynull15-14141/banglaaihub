@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Menu, Sparkles } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -12,6 +12,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { MAIN_NAV_LINKS } from '@/components/layout/mainNavLinks';
 import { cn } from '@/lib/utils';
 
@@ -26,15 +27,13 @@ export function MobileMenu() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Open menu">
+        <Button variant="ghost" size="icon-sm" className="xl:hidden" aria-label="Open menu">
           <Menu className="size-5" aria-hidden="true" />
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="p-0">
         <SheetHeader className="flex-row items-center gap-2 border-b">
-          <span className="flex size-6 items-center justify-center rounded-md bg-brand text-brand-foreground">
-            <Sparkles className="size-3.5" aria-hidden="true" />
-          </span>
+          <BrandLogo size="sm" />
           <SheetTitle>Bangla AI Hub</SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-1 p-3" aria-label="Main navigation">

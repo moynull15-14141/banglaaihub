@@ -2,6 +2,8 @@ import { Meilisearch } from 'meilisearch';
 import { env } from './env';
 
 export const RESOURCES_INDEX_UID = 'resources';
+// Phase 4B — a second index for user/profile search, same shared client.
+export const USERS_INDEX_UID = 'users';
 
 // A single server-side client is used for both indexing and searching —
 // MeiliSearch is never queried directly from the frontend (search is always

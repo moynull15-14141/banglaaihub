@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/lib/store/authStore';
 import { getMe } from '@/lib/api/users';
 import { SessionExpiredDialog } from '@/components/auth/SessionExpiredDialog';
+import { MessagingDock } from '@/components/messaging/MessagingDock';
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -58,6 +59,7 @@ export function Providers({ children }: ProvidersProps) {
         <TooltipProvider delayDuration={200}>
           <AuthBootstrap>{children}</AuthBootstrap>
           <SessionExpiredDialog />
+          <MessagingDock />
           <Toaster />
           {process.env.NODE_ENV === 'development' ? (
             <ReactQueryDevtools initialIsOpen={false} />

@@ -4,6 +4,7 @@ import type {
   CreateResourceInput,
   CreateResourceResult,
   ListResourcesParams,
+  PublishArticleInput,
   Resource,
   ResourceAttachment,
   ResourceVersionEntry,
@@ -237,4 +238,24 @@ export async function reorderResourceAttachments(slug: string, fileIds: string[]
   await apiClient.patch(`/resources/${encodeURIComponent(slug)}/attachments/reorder`, {
     file_ids: fileIds,
   });
+}
+
+// --- Content Platform (Phase 5A-1) — article publish/schedule/archive -----
+
+// POST /resources/:slug/publish — immediate publish when scheduled_at is
+// omitted, or a future schedule (status becomes `scheduled`, flipped to
+// `approved` by the backend's scheduled-publish job once due) otherwise.
+export async function publishArticle(slug: string, input: PublishArticleInput = {}): Promise<Resource> {
+  const response = await apiClient.post<ApiSuccessResponse<Resource>>(
+    `/resources/${encodeURIComponent(slug)}/publish`,
+    input,
+  );
+  return response.data.data;
+}
+
+export async function archiveArticle(slug: string): Promise<Resource> {
+  const response = await apiClient.post<ApiSuccessResponse<Resource>>(
+    `/resources/${encodeURIComponent(slug)}/archive`,
+  );
+  return response.data.data;
 }

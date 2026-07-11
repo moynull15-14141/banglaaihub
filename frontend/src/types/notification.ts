@@ -10,7 +10,16 @@ export type NotificationType =
   | 'contributor_application_rejected'
   | 'contributor_application_needs_revision'
   | 'contributor_application_submitted'
-  | 'contributor_application_withdrawn';
+  | 'contributor_application_withdrawn'
+  | 'review_received'
+  | 'resource_liked'
+  | 'review_helpful'
+  | 'review_removed'
+  | 'comment_removed'
+  | 'follow_received'
+  | 'badge_received'
+  | 'level_up'
+  | 'milestone_reached';
 
 export interface Notification {
   id: string;

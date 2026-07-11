@@ -1,4 +1,11 @@
-import type { ModelFormat, PromptDifficulty, PromptRole, ResourceType, ToolType } from '@/types/resource';
+import type {
+  ArticleContentType,
+  ModelFormat,
+  PromptDifficulty,
+  PromptRole,
+  ResourceType,
+  ToolType,
+} from '@/types/resource';
 
 // Mirrors the Prisma ResourceType enum exactly (doc 10) — the only 8 values
 // that exist anywhere in the schema (`model` added Phase 3A).
@@ -116,6 +123,7 @@ export const RESOURCE_ATTACHMENT_ACCEPT_BY_TYPE: Record<ResourceType, string> = 
   project: '.zip,.pdf,.docx,.pptx',
   news: '.pdf,.jpg,.jpeg,.png',
   model: '.json,.txt,.md,.safetensors,.gguf',
+  article: '.jpg,.jpeg,.png,.webp',
 };
 
 export const RESOURCE_ATTACHMENT_HINT_BY_TYPE: Record<ResourceType, string> = {
@@ -127,6 +135,7 @@ export const RESOURCE_ATTACHMENT_HINT_BY_TYPE: Record<ResourceType, string> = {
   project: 'ZIP, PDF, DOCX, PPTX — up to 200MB each',
   news: 'PDF, JPG, PNG — up to 20MB each',
   model: 'JSON, TXT, Markdown, Safetensors, GGUF — up to 2GB each',
+  article: 'JPG, PNG, WebP — up to 5MB each',
 };
 
 // Primary model weight file (`kind=model` upload) — mirrors DATASET_FILE_ACCEPT
@@ -135,3 +144,25 @@ export const RESOURCE_ATTACHMENT_HINT_BY_TYPE: Record<ResourceType, string> = {
 // other single-slot file field.
 export const MODEL_FILE_ACCEPT = '.gguf,.safetensors,.onnx,.pt,.bin';
 export const MODEL_FILE_HINT = 'GGUF, Safetensors, ONNX, PyTorch, BIN — up to 2GB';
+
+// Mirrors the Prisma ArticleContentType enum (Phase 5A-1 Content Platform) —
+// the CMS taxonomy for the `article` ResourceType, deliberately not part of
+// RESOURCE_TYPE_OPTIONS above (articles aren't created via the general
+// Submit wizard, only via the dedicated Admin > Content > Articles editor).
+export const ARTICLE_CONTENT_TYPE_OPTIONS: { value: ArticleContentType; label: string }[] = [
+  { value: 'article', label: 'Article' },
+  { value: 'tutorial', label: 'Tutorial' },
+  { value: 'guide', label: 'Guide' },
+  { value: 'news', label: 'News' },
+  { value: 'announcement', label: 'Announcement' },
+  { value: 'editorial', label: 'Editorial' },
+  { value: 'interview', label: 'Interview' },
+  { value: 'release_notes', label: 'Release Notes' },
+  { value: 'opinion', label: 'Opinion' },
+  { value: 'case_study', label: 'Case Study' },
+  { value: 'community_update', label: 'Community Update' },
+];
+
+export const ARTICLE_CONTENT_TYPE_LABELS: Record<ArticleContentType, string> = Object.fromEntries(
+  ARTICLE_CONTENT_TYPE_OPTIONS.map(({ value, label }) => [value, label]),
+) as Record<ArticleContentType, string>;

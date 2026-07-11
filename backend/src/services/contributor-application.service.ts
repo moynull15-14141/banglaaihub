@@ -414,22 +414,24 @@ export class ContributorApplicationService {
       }),
     ]);
 
-    const data = applications.map((application) => ({
-      id: application.id,
-      status: application.status,
-      full_name: application.fullName,
-      expertise: application.expertise,
-      submitted_at: application.submittedAt,
-      reviewed_at: application.reviewedAt,
-      applicant: application.applicant
-        ? {
-            id: application.applicant.id,
-            username: application.applicant.username,
-            display_name: application.applicant.displayName,
-            avatar_url: application.applicant.avatarUrl,
-          }
-        : null,
-    }));
+    const data = await Promise.all(
+      applications.map(async (application) => ({
+        id: application.id,
+        status: application.status,
+        full_name: application.fullName,
+        expertise: application.expertise,
+        submitted_at: application.submittedAt,
+        reviewed_at: application.reviewedAt,
+        applicant: application.applicant
+          ? {
+              id: application.applicant.id,
+              username: application.applicant.username,
+              display_name: application.applicant.displayName,
+              avatar_url: await StorageService.resolveAvatarUrl(application.applicant.avatarUrl),
+            }
+          : null,
+      })),
+    );
 
     return { data, meta: buildPaginationMeta(total, pagination) };
   }
@@ -521,7 +523,7 @@ export class ContributorApplicationService {
         id: application.applicant.id,
         username: application.applicant.username,
         display_name: application.applicant.displayName,
-        avatar_url: application.applicant.avatarUrl,
+        avatar_url: await StorageService.resolveAvatarUrl(application.applicant.avatarUrl),
         email: application.applicant.email,
         roles: application.applicant.userRoles.map((userRole) => userRole.role.name),
         reputation_score: application.applicant.reputationScore,

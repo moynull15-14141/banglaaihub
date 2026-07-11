@@ -26,6 +26,8 @@ export interface SearchResult {
   view_count: number;
   download_count: number;
   bookmark_count: number;
+  avg_rating: number | null;
+  review_count: number;
   published_at: string | null;
   thumbnail_url: string | null;
 }

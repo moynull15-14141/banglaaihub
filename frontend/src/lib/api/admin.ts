@@ -2,6 +2,7 @@ import { apiClient } from '@/lib/api/client';
 import type { ApiSuccessResponse, ResponseMeta } from '@/types/api';
 import type { AdminDashboardStats, AdminUser, AuditLogEntry, SearchAnalyticsSummary } from '@/types/admin';
 import type { ListResourcesParams, Resource } from '@/types/resource';
+import type { ListReportsParams, Report } from '@/types/report';
 import type {
   ContributorApplicationAdminDetail,
   ContributorApplicationDecisionInput,
@@ -11,6 +12,23 @@ import type {
 
 export async function getAdminDashboard(): Promise<AdminDashboardStats> {
   const response = await apiClient.get<ApiSuccessResponse<AdminDashboardStats>>('/admin/dashboard');
+  return response.data.data;
+}
+
+export async function getAutoApprovalSettingAdmin(): Promise<{ require_manual_approval: boolean }> {
+  const response = await apiClient.get<ApiSuccessResponse<{ require_manual_approval: boolean }>>(
+    '/admin/settings/auto-approval',
+  );
+  return response.data.data;
+}
+
+export async function updateAutoApprovalSettingAdmin(
+  requireManualApproval: boolean,
+): Promise<{ require_manual_approval: boolean }> {
+  const response = await apiClient.patch<ApiSuccessResponse<{ require_manual_approval: boolean }>>(
+    '/admin/settings/auto-approval',
+    { require_manual_approval: requireManualApproval },
+  );
   return response.data.data;
 }
 
@@ -64,11 +82,60 @@ export async function restoreResourceAdmin(id: string): Promise<Resource> {
   return response.data.data;
 }
 
+// --- Reports (Phase 4A — reviews/comments/resources) -----------------------
+
+export async function listReportsAdmin(params: ListReportsParams = {}): Promise<AdminListResult<Report>> {
+  const response = await apiClient.get<ApiSuccessResponse<Report[]>>('/admin/reports', { params });
+  return { data: response.data.data, meta: response.data.meta ?? {} };
+}
+
+export async function resolveReportAdmin(id: string): Promise<Report> {
+  const response = await apiClient.patch<ApiSuccessResponse<Report>>(
+    `/admin/reports/${encodeURIComponent(id)}/resolve`,
+  );
+  return response.data.data;
+}
+
+export async function rejectReportAdmin(id: string, reason?: string): Promise<Report> {
+  const response = await apiClient.patch<ApiSuccessResponse<Report>>(
+    `/admin/reports/${encodeURIComponent(id)}/reject`,
+    reason ? { reason } : undefined,
+  );
+  return response.data.data;
+}
+
+// --- Phase 4B — profile moderation -------------------------------------------
+
+export async function verifyUserAdmin(id: string): Promise<AdminUser> {
+  const response = await apiClient.post<ApiSuccessResponse<AdminUser>>(
+    `/admin/users/${encodeURIComponent(id)}/verify`,
+  );
+  return response.data.data;
+}
+
+export async function unverifyUserAdmin(id: string): Promise<AdminUser> {
+  const response = await apiClient.delete<ApiSuccessResponse<AdminUser>>(
+    `/admin/users/${encodeURIComponent(id)}/verify`,
+  );
+  return response.data.data;
+}
+
+export async function resetUserCoverImageAdmin(id: string): Promise<void> {
+  await apiClient.post(`/admin/users/${encodeURIComponent(id)}/cover-image/reset`);
+}
+
+export async function removeFollowAdmin(followId: string): Promise<void> {
+  await apiClient.delete(`/admin/follows/${encodeURIComponent(followId)}`);
+}
+
 export interface ListUsersParams {
   search?: string;
   role?: string;
   status?: 'active' | 'suspended' | 'banned';
   sort?: 'newest' | 'oldest';
+  // 'staff' scopes the list to moderator/editor/admin/super_admin accounts —
+  // see backend/src/services/users.service.ts's STAFF_ROLES.
+  scope?: 'all' | 'staff';
   page?: number;
   limit?: number;
 }

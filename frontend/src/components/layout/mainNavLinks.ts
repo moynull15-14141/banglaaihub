@@ -8,6 +8,7 @@ import {
   Info,
   MessageSquareText,
   Newspaper,
+  Rss,
   Search,
   Wrench,
 } from 'lucide-react';
@@ -18,7 +19,10 @@ import { ROUTES } from '@/lib/constants/routes';
 // news were submittable but had no way to browse them by type. `model`
 // added Phase 3A (Model Hub). `Categories` added Phase 3B (Discovery System)
 // — the category taxonomy already had per-category pages, just no index.
+// `Feed` added Phase 4D — the algorithmically-ranked cross-type surface,
+// listed first since it's meant to be the daily-return destination.
 export const MAIN_NAV_LINKS = [
+  { href: ROUTES.feed, label: 'Feed', icon: Rss },
   { href: ROUTES.datasets, label: 'Datasets', icon: Database },
   { href: ROUTES.papers, label: 'Papers', icon: FileText },
   { href: ROUTES.tools, label: 'Tools', icon: Wrench },
@@ -31,3 +35,12 @@ export const MAIN_NAV_LINKS = [
   { href: ROUTES.search, label: 'Search', icon: Search },
   { href: ROUTES.about, label: 'About', icon: Info },
 ];
+
+// The desktop navbar (see Navbar.tsx) has room for a handful of links
+// before it starts fighting the logo/searchbar/avatar for space on a
+// typical 1280–1440px laptop viewport — the full 11-item list only fits the
+// mobile drawer (MobileMenu, which still renders every MAIN_NAV_LINKS
+// entry). These six are the primary resource-browsing destinations; the
+// rest live in the desktop nav's "More" dropdown.
+export const PRIMARY_NAV_LINKS = MAIN_NAV_LINKS.slice(0, 5);
+export const SECONDARY_NAV_LINKS = MAIN_NAV_LINKS.slice(5);

@@ -30,6 +30,7 @@ export interface SearchAnalyticsSummary {
 export interface AdminUser extends User {
   status: 'active' | 'suspended' | 'banned';
   last_login_at: string | null;
+  is_verified: boolean;
 }
 
 export interface AuditLogActor {

@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, Menu, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, LogOut, Menu, User as UserIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { AdminSidebarNav } from '@/components/admin/AdminSidebarNav';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useLogout } from '@/lib/hooks/useLogout';
 import { ROUTES } from '@/lib/constants/routes';
@@ -34,12 +35,20 @@ export function AdminTopbar() {
         </SheetTrigger>
         <SheetContent side="left" className="p-0">
           <SheetHeader className="flex-row items-center gap-2 border-b">
-            <span className="flex size-6 items-center justify-center rounded-md bg-brand text-brand-foreground">
-              <ShieldCheck className="size-3.5" aria-hidden="true" />
-            </span>
+            <BrandLogo size="sm" />
             <SheetTitle>Admin</SheetTitle>
           </SheetHeader>
           <AdminSidebarNav onNavigate={() => setMobileOpen(false)} />
+          <SheetFooter className="border-t p-3">
+            <Link
+              href={ROUTES.home}
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
+              Back to site
+            </Link>
+          </SheetFooter>
         </SheetContent>
       </Sheet>
 

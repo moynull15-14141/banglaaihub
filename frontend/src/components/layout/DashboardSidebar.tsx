@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Sparkles } from 'lucide-react';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { DashboardSidebarNav } from '@/components/layout/DashboardSidebarNav';
 import { ROUTES } from '@/lib/constants/routes';
 
@@ -12,9 +12,7 @@ export function DashboardSidebar() {
         href={ROUTES.home}
         className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4 font-semibold tracking-tight text-sidebar-foreground"
       >
-        <span className="flex size-6 items-center justify-center rounded-md bg-brand text-brand-foreground">
-          <Sparkles className="size-3.5" aria-hidden="true" />
-        </span>
+        <BrandLogo size="sm" />
         Bangla AI Hub
       </Link>
       <DashboardSidebarNav />

@@ -25,6 +25,32 @@ export async function uploadAvatar(file: File): Promise<{ avatar_url: string }> 
   return response.data.data;
 }
 
+export async function uploadCoverImage(file: File): Promise<{ cover_image: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await apiClient.post<ApiSuccessResponse<{ cover_image: string }>>(
+    '/users/me/cover-image',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return response.data.data;
+}
+
+export async function removeCoverImage(): Promise<void> {
+  await apiClient.delete('/users/me/cover-image');
+}
+
+export async function updateNotificationPreference(
+  category: string,
+  enabled: boolean,
+): Promise<{ muted_notification_categories: string[] }> {
+  const response = await apiClient.patch<ApiSuccessResponse<{ muted_notification_categories: string[] }>>(
+    '/users/me/notification-preferences',
+    { category, enabled },
+  );
+  return response.data.data;
+}
+
 export async function getMyDashboard(): Promise<UserDashboardStats> {
   const response = await apiClient.get<ApiSuccessResponse<UserDashboardStats>>('/users/me/dashboard');
   return response.data.data;
@@ -84,4 +110,43 @@ export async function getPublicProfile(username: string): Promise<PublicProfile>
     `/users/${encodeURIComponent(username)}`,
   );
   return response.data.data;
+}
+
+// --- Phase 4B — profile analytics (fire-and-forget) --------------------------
+
+export async function recordProfileView(username: string): Promise<void> {
+  await apiClient.post(`/users/${encodeURIComponent(username)}/view`);
+}
+
+export async function recordProfileShare(username: string): Promise<void> {
+  await apiClient.post(`/users/${encodeURIComponent(username)}/share`);
+}
+
+export async function recordSocialLinkClick(username: string): Promise<void> {
+  await apiClient.post(`/users/${encodeURIComponent(username)}/social-click`);
+}
+
+// --- Phase 4B — user search ---------------------------------------------------
+
+export interface SearchUsersParams {
+  q?: string;
+  verified?: true;
+  contributor_level?: string;
+  skills?: string[];
+  research_interest?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface SearchUsersResult {
+  data: unknown[];
+  meta: ResponseMeta;
+}
+
+export async function searchUsers(params: SearchUsersParams = {}): Promise<SearchUsersResult> {
+  const { skills, ...rest } = params;
+  const response = await apiClient.get<ApiSuccessResponse<unknown[]>>('/users/search', {
+    params: { ...rest, skills: skills && skills.length > 0 ? skills.join(',') : undefined },
+  });
+  return { data: response.data.data, meta: response.data.meta ?? {} };
 }

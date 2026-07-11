@@ -72,6 +72,15 @@ users
 ├── external_stats    JSONB              -- reserved for future GitHub/Kaggle/HF/Scholar
 │                                          stats + AI trust score; unused today, nullable
 │                                          so it needs no migration when that work starts
+├── headline          VARCHAR(200)       -- Phase 4B: short tagline shown under display_name
+├── cover_image        TEXT              -- Phase 4B: profile banner (R2 key, mirrors avatar_url)
+├── gitlab_url         TEXT              -- Phase 4B
+├── research_interests TEXT[]            -- Phase 4B
+├── skills             TEXT[]            -- Phase 4B
+├── languages          TEXT[]            -- Phase 4B: spoken/working languages
+├── profile_visibility VARCHAR(20) DEFAULT 'public'  -- Phase 4B: public | private | followers_only
+├── follower_count     INTEGER DEFAULT 0 -- Phase 4B: denormalized, mirrors resources.bookmark_count
+├── following_count    INTEGER DEFAULT 0 -- Phase 4B
 ├── reputation_score INTEGER DEFAULT 0
 ├── is_verified      BOOLEAN DEFAULT FALSE
 ├── email_verified   BOOLEAN DEFAULT FALSE
@@ -162,6 +171,9 @@ resources
 ├── view_count       INTEGER DEFAULT 0
 ├── download_count   INTEGER DEFAULT 0
 ├── bookmark_count   INTEGER DEFAULT 0
+├── avg_rating       FLOAT8                     -- Phase 4A — recomputed from reviews, null until first review
+├── review_count     INTEGER DEFAULT 0          -- Phase 4A
+├── like_count       INTEGER DEFAULT 0          -- Phase 4A
 ├── featured         BOOLEAN DEFAULT FALSE
 ├── approved_by      UUID REFERENCES users(id)
 ├── approved_at      TIMESTAMPTZ
@@ -344,11 +356,88 @@ comments
 ├── content          TEXT NOT NULL
 ├── is_pinned        BOOLEAN DEFAULT FALSE
 ├── upvote_count     INTEGER DEFAULT 0
+├── like_count       INTEGER DEFAULT 0          -- Phase 4A
 ├── status           VARCHAR(20) DEFAULT 'visible'  -- visible | hidden | deleted
 ├── created_at       TIMESTAMPTZ DEFAULT NOW()
 ├── updated_at       TIMESTAMPTZ DEFAULT NOW()
 └── deleted_at       TIMESTAMPTZ
 ```
+
+### 14a. `reviews` (Phase 4A — one review per resource per user)
+
+```sql
+reviews
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── resource_id      UUID REFERENCES resources(id) ON DELETE CASCADE
+├── author_id        UUID REFERENCES users(id)
+├── rating           SMALLINT NOT NULL          -- 1..5
+├── title            VARCHAR(200)
+├── body             TEXT
+├── helpful_count    INTEGER DEFAULT 0
+├── status           VARCHAR(20) DEFAULT 'visible'  -- visible | hidden | deleted
+├── created_at       TIMESTAMPTZ DEFAULT NOW()
+├── updated_at       TIMESTAMPTZ DEFAULT NOW()
+├── deleted_at       TIMESTAMPTZ                -- soft delete
+└── UNIQUE (resource_id, author_id)
+```
+
+### 14b. `resource_likes` / `comment_likes` / `review_helpful_votes` (Phase 4A)
+
+Three explicit join tables (mirroring `bookmarks`' shape), each with a per-user unique
+constraint and a **hard delete** on unlike/un-helpful (no soft delete — same as bookmarks):
+
+```sql
+resource_likes
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id          UUID REFERENCES users(id) ON DELETE CASCADE
+├── resource_id      UUID REFERENCES resources(id) ON DELETE CASCADE
+├── created_at       TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (user_id, resource_id)
+
+comment_likes
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id          UUID REFERENCES users(id) ON DELETE CASCADE
+├── comment_id       UUID REFERENCES comments(id) ON DELETE CASCADE
+├── created_at       TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (user_id, comment_id)
+
+review_helpful_votes
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id          UUID REFERENCES users(id) ON DELETE CASCADE
+├── review_id        UUID REFERENCES reviews(id) ON DELETE CASCADE
+├── created_at       TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (user_id, review_id)
+```
+
+### 14c. `posts` / `post_likes` (Phase 4E — user-generated feed status updates)
+
+```sql
+posts
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── author_id        UUID REFERENCES users(id)
+├── content          TEXT NOT NULL              -- max 1000 chars, enforced app-side
+├── image_url        TEXT                       -- R2 object key or pasted http(s) URL, same
+│                                                -- resolveUrl() convention as resources.thumbnail_url
+├── like_count       INTEGER DEFAULT 0
+├── status           VARCHAR(20) DEFAULT 'visible'  -- visible | hidden | deleted, reuses comment_status
+├── created_at       TIMESTAMPTZ DEFAULT NOW()
+├── updated_at       TIMESTAMPTZ DEFAULT NOW()
+└── deleted_at       TIMESTAMPTZ
+
+post_likes
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id          UUID REFERENCES users(id) ON DELETE CASCADE
+├── post_id          UUID REFERENCES posts(id) ON DELETE CASCADE
+├── created_at       TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (user_id, post_id)
+```
+Any logged-in user can post — instant publish, no approval queue (unlike Resource
+submissions); moderated after the fact via the same `reports` flow as comments (see
+`comment:delete_any` reuse for moderator removal, no dedicated `post:*` permission added).
+Rate-limited at 10/hour/user server-side since there's no approval gate to also act as a
+spam brake. Surfaces in the Community/For You feed as a `user_post` card, scored by
+freshness + like-count (in place of a resource's download/bookmark/view trending signal)
++ follow/contributor-affinity — see `feed.service.ts`'s `buildPersonalizableSnapshot`.
 
 ### 15. `reports`
 
@@ -357,6 +446,9 @@ reports
 ├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
 ├── reporter_id      UUID REFERENCES users(id)
 ├── resource_id      UUID REFERENCES resources(id)
+├── comment_id       UUID REFERENCES comments(id)   -- Phase 4A
+├── review_id        UUID REFERENCES reviews(id)    -- Phase 4A
+├── post_id          UUID REFERENCES posts(id)      -- Phase 4E
 ├── reason           VARCHAR(50) NOT NULL
 │                    -- spam | copyright | wrong_data | duplicate | inappropriate
 ├── description      TEXT
@@ -364,7 +456,9 @@ reports
 ├── reviewed_by      UUID REFERENCES users(id)
 ├── reviewed_at      TIMESTAMPTZ
 ├── created_at       TIMESTAMPTZ DEFAULT NOW()
-└── updated_at       TIMESTAMPTZ DEFAULT NOW()
+├── updated_at       TIMESTAMPTZ DEFAULT NOW()
+└── CHECK (num_nonnulls(resource_id, comment_id, review_id, post_id) <= 1)  -- at most one target
+                                                                   -- (0 after a hard-delete SET NULLs it; app layer enforces exactly 1 on create)
 ```
 
 ---
@@ -378,6 +472,9 @@ notifications
 ├── type             VARCHAR(50) NOT NULL
 │                    -- submission_approved | submission_rejected | comment_reply
 │                    -- mention | reputation_milestone | weekly_digest
+│                    -- review_received | resource_liked | review_helpful
+│                    -- review_removed | comment_removed (Phase 4A)
+│                    -- follow_received | badge_received | level_up | milestone_reached (Phase 4B)
 ├── title            VARCHAR(200) NOT NULL
 ├── message          TEXT
 ├── link             TEXT                      -- /datasets/my-dataset
@@ -460,6 +557,7 @@ resource_analytics
 ├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
 ├── resource_id      UUID REFERENCES resources(id) ON DELETE CASCADE
 ├── event_type       VARCHAR(20) NOT NULL          -- view | download | share | bookmark
+│                    -- rating | review | comment | reply | like | helpful (Phase 4A)
 ├── user_id          UUID REFERENCES users(id)      -- NULL for anonymous
 ├── ip_address       INET
 ├── referrer         TEXT
@@ -580,6 +678,216 @@ search_logs
 
 "Popular searches" = `query` grouped and counted within a recent window (default 7 days).
 No-result searches (for the admin view) are simply rows where `result_count = 0`.
+
+---
+
+### 24. `follows` (Phase 4B — mirrors `bookmarks`' shape exactly, hard delete)
+
+```sql
+follows
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── follower_id   UUID REFERENCES users(id) ON DELETE CASCADE
+├── following_id  UUID REFERENCES users(id) ON DELETE CASCADE
+├── created_at    TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (follower_id, following_id)
+```
+No-self-follow is an app-layer check (no schema-level constraint), same precedent as
+"can't review your own resource" in `reviews`.
+
+### 25. `pinned_resources` (Phase 4B — max 6 per user, enforced in the service layer)
+
+```sql
+pinned_resources
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id       UUID REFERENCES users(id) ON DELETE CASCADE
+├── resource_id   UUID REFERENCES resources(id) ON DELETE CASCADE
+├── position      INTEGER NOT NULL
+├── created_at    TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (user_id, resource_id)
+```
+
+### 26. `activities` (Phase 4B — dual-write activity ledger)
+
+```sql
+activities
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id       UUID REFERENCES users(id) ON DELETE CASCADE
+├── type          VARCHAR(50) NOT NULL   -- open string, same convention as reputation_events.event_type
+│                 -- resource_uploaded | resource_approved | review_written | review_received
+│                 -- comment_added | reply_added | badge_received | level_up
+│                 -- started_following | prompt_forked | model_uploaded | like_received
+├── target_type   VARCHAR(50)
+├── target_id     UUID
+├── metadata      JSONB
+└── created_at    TIMESTAMPTZ DEFAULT NOW()
+```
+Written alongside the real side-effect (same pattern as `reputation_events` — never derived
+via a live UNION query across resources/reviews/comments). Doubles as the source for the
+public activity timeline AND the contribution heatmap (grouped by day) — no separate
+heatmap table.
+
+### 27. `badges` / `user_badges` (Phase 4B — catalog + award join)
+
+```sql
+badges
+├── id            SERIAL PRIMARY KEY
+├── key           VARCHAR(50) UNIQUE NOT NULL   -- e.g. verified_contributor, top_reviewer
+├── name          VARCHAR(100) NOT NULL
+├── description   TEXT NOT NULL
+├── icon          VARCHAR(50) NOT NULL          -- lucide-react icon name
+└── created_at    TIMESTAMPTZ DEFAULT NOW()
+
+user_badges
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id       UUID REFERENCES users(id) ON DELETE CASCADE
+├── badge_id      INTEGER REFERENCES badges(id) ON DELETE CASCADE
+├── awarded_by    UUID REFERENCES users(id) ON DELETE SET NULL  -- NULL = auto-awarded
+├── awarded_at    TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (user_id, badge_id)
+```
+Auto-award checks run in `BadgeService.checkAndAwardMilestones()` after reputation/review/
+comment/resource-approval events — see `project-planning`/backend `scripts/seed.ts` for the
+seeded catalog. "Contributor Level" is **not** a stored column — it's computed from
+`reputation_score` via `backend/src/utils/contributorLevel.ts` (mirrors the frontend's
+`ReputationBadge.tsx` tier thresholds), avoiding a duplicated/stale leveling concept.
+
+### 28. `user_analytics` (Phase 4B — mirrors `resource_analytics`, FK flipped to `users`)
+
+```sql
+user_analytics
+├── id                UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── profile_user_id   UUID REFERENCES users(id) ON DELETE CASCADE   -- whose profile
+├── event_type        VARCHAR(30) NOT NULL
+│                     -- profile_view | profile_share | follow | unfollow
+│                     -- pinned_resource_click | social_link_click
+├── viewer_id         UUID REFERENCES users(id) ON DELETE SET NULL  -- NULL for anonymous
+├── ip_address        INET
+├── referrer          TEXT
+└── created_at        TIMESTAMPTZ DEFAULT NOW()
+```
+Kept as its own table rather than a nullable `resource_id` on `resource_analytics`, since
+profile events aren't resource-scoped and that FK/cascade semantics wouldn't apply.
+
+### 29. `feed_interactions` (Phase 4D — Intelligent Feed, per-user seen/negative-signal state)
+
+```sql
+feed_interactions
+├── id                UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── user_id           UUID REFERENCES users(id) ON DELETE CASCADE
+├── resource_id       UUID REFERENCES resources(id) ON DELETE CASCADE  -- NULL for contributor/category mutes
+├── contributor_id    UUID REFERENCES users(id) ON DELETE CASCADE      -- set for mute_contributor
+├── category_id       INTEGER REFERENCES categories(id) ON DELETE CASCADE  -- set for mute_category
+├── target_key        VARCHAR NOT NULL   -- resource_id | contributor_id | category_id, whichever is set
+│                     -- (mirrors activities.target_id's polymorphic-string precedent; needed because a
+│                     -- unique index across three mutually-exclusive nullable FKs wouldn't dedupe, since
+│                     -- Postgres treats NULL as distinct from NULL)
+├── type              VARCHAR NOT NULL   -- impression | click | hide | mute_contributor | mute_category | not_interested
+├── impression_count  INTEGER DEFAULT 0  -- upsert-incremented, not one row per view
+├── revoked_at        TIMESTAMPTZ        -- soft-delete for "undo hide/mute"
+├── created_at        TIMESTAMPTZ DEFAULT NOW()
+├── updated_at        TIMESTAMPTZ
+└── UNIQUE (user_id, type, target_key)
+```
+A **state table, not an event log** — deliberately not an `AnalyticsEventType` extension on
+`resource_analytics`. Impressions are extremely high-write (every card render), while
+`resource_analytics` is already full-scanned by `resolveTrendingPage`'s trending-score query;
+mixing an impression firehose into that table would degrade it. Feed ranking also needs
+per-(user, resource) *state* (seen count, last seen, hidden flag) for anti-repetition scoring
+and fast negative-signal existence checks, which a log table handles poorly.
+
+### 30. `feed_pins` (Phase 4D — admin-curated Featured / Editor's Picks)
+
+```sql
+feed_pins
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── resource_id   UUID REFERENCES resources(id) ON DELETE CASCADE
+├── pin_type      VARCHAR NOT NULL   -- featured | editors_pick
+├── position      INTEGER NOT NULL
+├── pinned_by     UUID REFERENCES users(id)
+├── note          TEXT               -- optional curator caption shown on the card
+├── starts_at     TIMESTAMPTZ
+├── ends_at       TIMESTAMPTZ
+├── created_at    TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (resource_id, pin_type)
+```
+Modeled on `pinned_resources` but scoped to admin curation, with a type discriminator and
+optional scheduling window so Editor's Picks can rotate weekly without deleting/recreating
+rows. `featured`/`editors_pick` are independent pin types on the same resource, not a
+DB-enforced subset relationship — the admin UI can pin a resource as both. Distinct from
+`resources.featured` (the existing general-purpose flag used elsewhere, e.g. resource detail
+badges) — this table is specifically feed placement with ordering.
+
+### 31. `feed_announcements` (Phase 4D — admin platform-wide messages surfaced as feed cards)
+
+```sql
+feed_announcements
+├── id            UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── title         VARCHAR(200) NOT NULL
+├── body          TEXT NOT NULL
+├── image_url     TEXT   -- banner image: R2 object key or a pasted http(s) URL,
+│                 -- resolved via StorageService.resolveUrl() same as resources.thumbnail_url.
+│                 -- Distinct from link_url below — this is the image, not the click-through target.
+├── link_url      TEXT
+├── created_by    UUID REFERENCES users(id)
+├── is_active     BOOLEAN DEFAULT true
+├── starts_at     TIMESTAMPTZ
+├── ends_at       TIMESTAMPTZ
+├── created_at    TIMESTAMPTZ DEFAULT NOW()
+└── updated_at    TIMESTAMPTZ
+```
+
+**Feed weight/config storage**: no new table — reuses `platform_settings` (table #18's sibling,
+see `PlatformSetting` in the schema) with `key = 'feed_config'`, a single JSON blob shaped
+`{ weights: {...}, diversity: { maxPerContributor, maxPerCategory, maxPerType, discoveryRatio },
+enabledCardTypes: [...] }`. Mirrors the existing `require_manual_approval` key exactly — no
+relational structure needed since it's read wholesale into JS, and `updated_at`/`updated_by`
+already give an audit trail.
+
+**No new tables for the rest of the feed's card types** — they read directly from existing
+tables: resource published/updated (`resources.published_at`/`updated_at`), follow-based
+activity (`follows` + `activities`), badges/milestones (`user_badges`/`reputation_events`),
+trending (existing `resolveTrendingPage` scoring, extended), comment highlights (`comments` +
+`comment_likes`).
+
+**Explicitly out of scope**: Collections, Events, and Sponsored Content have no backing tables —
+`feed_card_type` reserves `collection_shared` / `event_upcoming` / `sponsored_content` enum
+values for future work only.
+
+### 32. `conversations` / `messages` / `user_blocks` (Phase 4F — 1-on-1 direct messaging)
+
+```sql
+conversations
+├── id                    UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── participant_one_id    UUID REFERENCES users(id) ON DELETE CASCADE  -- canonically the
+├── participant_two_id    UUID REFERENCES users(id) ON DELETE CASCADE  -- lexicographically smaller UUID
+├── last_message_at       TIMESTAMPTZ
+├── created_at            TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (participant_one_id, participant_two_id)
+
+messages
+├── id               UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── conversation_id  UUID REFERENCES conversations(id) ON DELETE CASCADE
+├── sender_id        UUID REFERENCES users(id)          -- nullable: SET NULL if the sender is deleted,
+│                                                        -- preserving the thread instead of cascading it away
+├── content          VARCHAR(2000) NOT NULL
+├── read_at          TIMESTAMPTZ
+└── created_at       TIMESTAMPTZ DEFAULT NOW()
+
+user_blocks
+├── id           UUID PRIMARY KEY DEFAULT gen_random_uuid()
+├── blocker_id   UUID REFERENCES users(id) ON DELETE CASCADE
+├── blocked_id   UUID REFERENCES users(id) ON DELETE CASCADE
+├── created_at   TIMESTAMPTZ DEFAULT NOW()
+└── UNIQUE (blocker_id, blocked_id)
+```
+Polling-based, not WebSocket (no realtime infra in this stack) — the frontend polls
+`GET /messages/unread-count` globally and `GET /messages/conversations/:id/messages` while a
+thread is open. `conversations`' canonical participant ordering (participant_one_id always the
+lexicographically smaller UUID) means `getOrCreateConversation` is a single `upsert` on the
+unique pair — no need to check both (A,B) and (B,A). Any logged-in user can message any other
+(no follow requirement), with `user_blocks` as the abuse control: a block is checked in both
+directions before a message send succeeds, plus a 60/hour/user rate limit. New messages notify
+via the existing `notifications` table (`new_message` type, `messages` preference category).
 
 ---
 

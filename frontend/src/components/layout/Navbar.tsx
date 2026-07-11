@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, LogOut, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { ChevronDown, LayoutDashboard, LogOut, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -15,8 +15,9 @@ import {
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { NotificationBell } from '@/components/notification/NotificationBell';
 import { SearchBar } from '@/components/search/SearchBar';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { MobileMenu } from '@/components/layout/MobileMenu';
-import { MAIN_NAV_LINKS } from '@/components/layout/mainNavLinks';
+import { PRIMARY_NAV_LINKS, SECONDARY_NAV_LINKS } from '@/components/layout/mainNavLinks';
 import { canAccessAdminPanel } from '@/components/admin/adminNavLinks';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useLogout } from '@/lib/hooks/useLogout';
@@ -42,9 +43,7 @@ export function Navbar() {
         <div className="flex items-center gap-8">
           <MobileMenu />
           <Link href={ROUTES.home} className="flex items-center gap-2 font-semibold tracking-tight">
-            <span className="flex size-7 items-center justify-center rounded-md bg-brand text-brand-foreground">
-              <Sparkles className="size-4" aria-hidden="true" />
-            </span>
+            <BrandLogo size="md" />
             <span className="hidden sm:inline">Bangla AI Hub</span>
           </Link>
           <div className="hidden w-64 md:block">
@@ -57,8 +56,8 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
-          <nav className="hidden items-center gap-1 lg:flex" aria-label="Main navigation">
-            {MAIN_NAV_LINKS.map((link) => {
+          <nav className="hidden items-center gap-1 xl:flex" aria-label="Main navigation">
+            {PRIMARY_NAV_LINKS.map((link) => {
               const active = isActive(pathname, link.href);
               return (
                 <Link
@@ -66,7 +65,7 @@ export function Navbar() {
                   href={link.href}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'relative rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                    'relative rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors',
                     active ? 'text-brand' : 'text-muted-foreground hover:text-foreground',
                   )}
                 >
@@ -77,6 +76,39 @@ export function Navbar() {
                 </Link>
               );
             })}
+            {(() => {
+              const activeSecondary = SECONDARY_NAV_LINKS.some((link) => isActive(pathname, link.href));
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-current={activeSecondary ? 'page' : undefined}
+                      className={cn(
+                        'relative flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap outline-none transition-colors',
+                        activeSecondary ? 'text-brand' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      More
+                      <ChevronDown className="size-3.5" aria-hidden="true" />
+                      {activeSecondary && (
+                        <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-brand" />
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {SECONDARY_NAV_LINKS.map((link) => (
+                      <DropdownMenuItem key={link.href} asChild>
+                        <Link href={link.href} aria-current={isActive(pathname, link.href) ? 'page' : undefined}>
+                          <link.icon />
+                          {link.label}
+                        </Link>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            })()}
           </nav>
           {isAuthenticated && user ? (
             <>
@@ -92,7 +124,7 @@ export function Navbar() {
                       name={user.display_name ?? user.username}
                       className="size-8"
                     />
-                    <span className="hidden text-sm font-medium sm:inline">
+                    <span className="hidden text-sm font-medium sm:max-xl:inline 2xl:inline">
                       {user.display_name ?? user.username}
                     </span>
                   </button>

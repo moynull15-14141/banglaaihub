@@ -11,6 +11,7 @@ const THUMBNAIL_FILE_ACCEPT = '.png,.jpg,.jpeg,.webp';
 
 interface ThumbnailUrlInputProps {
   id: string;
+  label?: string;
   value: string;
   onChange: (value: string) => void;
   file: File | null;
@@ -45,6 +46,7 @@ function isValidUrl(value: string): boolean {
 // the dataset-file flow.
 export function ThumbnailUrlInput({
   id,
+  label = 'Thumbnail',
   value,
   onChange,
   file,
@@ -77,7 +79,7 @@ export function ThumbnailUrlInput({
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label htmlFor={id}>Thumbnail</Label>
+        <Label htmlFor={id}>{label}</Label>
         <div className="flex gap-1">
           <Button
             type="button"

@@ -46,7 +46,7 @@ function SearchAnalyticsContent() {
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">Last 7 days</p>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3">
         <StatCard icon={Search} label="Total searches" value={data.total_searches} />
         <StatCard icon={TrendingUp} label="Distinct top queries" value={data.top_queries.length} />
         <StatCard icon={SearchX} label="Queries with no results" value={data.no_result_queries.length} />

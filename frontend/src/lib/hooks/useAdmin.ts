@@ -7,29 +7,70 @@ import {
   deleteUserAdmin,
   featureResourceAdmin,
   getAdminDashboard,
+  getAutoApprovalSettingAdmin,
   getContributorApplicationAdmin,
   getSearchAnalyticsAdmin,
   listAuditLogsAdmin,
   listContributorApplicationsAdmin,
   listPendingResourcesAdmin,
+  listReportsAdmin,
   listUsersAdmin,
   rejectContributorApplicationAdmin,
+  rejectReportAdmin,
   rejectResourceAdmin,
+  removeFollowAdmin,
   requestContributorApplicationRevisionAdmin,
+  resetUserCoverImageAdmin,
+  resolveReportAdmin,
   restoreResourceAdmin,
   unfeatureResourceAdmin,
+  unverifyUserAdmin,
+  updateAutoApprovalSettingAdmin,
   updateUserRolesAdmin,
   updateUserStatusAdmin,
+  verifyUserAdmin,
   type ListContributorApplicationsParams,
   type ListUsersParams,
 } from '@/lib/api/admin';
 import type { ListResourcesParams } from '@/types/resource';
 import type { ContributorApplicationDecisionInput } from '@/types/contributor-application';
+import type { ListReportsParams } from '@/types/report';
 
 const ADMIN_PENDING_KEY = ['admin', 'resources', 'pending'] as const;
 const ADMIN_DASHBOARD_KEY = ['admin', 'dashboard'] as const;
 const ADMIN_CONTRIBUTOR_APPLICATIONS_KEY = ['admin', 'contributor-applications'] as const;
 const ADMIN_USERS_KEY = ['admin', 'users'] as const;
+const ADMIN_REPORTS_KEY = ['admin', 'reports'] as const;
+
+export function useAdminReports(params: ListReportsParams = {}) {
+  return useQuery({
+    queryKey: [...ADMIN_REPORTS_KEY, params],
+    queryFn: () => listReportsAdmin(params),
+  });
+}
+
+function useInvalidateAdminReports() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ADMIN_REPORTS_KEY });
+  };
+}
+
+export function useResolveReport() {
+  const invalidate = useInvalidateAdminReports();
+  return useMutation({
+    mutationFn: resolveReportAdmin,
+    onSuccess: invalidate,
+  });
+}
+
+export function useRejectReport() {
+  const invalidate = useInvalidateAdminReports();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) => rejectReportAdmin(id, reason),
+    onSuccess: invalidate,
+  });
+}
 
 export function useAdminDashboard() {
   return useQuery({
@@ -76,6 +117,39 @@ function useModerationMutation(mutationFn: (id: string) => Promise<unknown>) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ADMIN_PENDING_KEY });
       void queryClient.invalidateQueries({ queryKey: ADMIN_DASHBOARD_KEY });
+    },
+  });
+}
+
+const ADMIN_AUTO_APPROVAL_KEY = ['admin', 'settings', 'auto-approval'] as const;
+
+export function useAutoApprovalSetting() {
+  return useQuery({
+    queryKey: ADMIN_AUTO_APPROVAL_KEY,
+    queryFn: getAutoApprovalSettingAdmin,
+  });
+}
+
+// Optimistic, same shape as the notification-preference toggle in
+// useProfile.ts — a moderation-queue-wide switch must flip instantly on
+// click, then roll back to the pre-toggle value if the request fails.
+export function useUpdateAutoApprovalSetting() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateAutoApprovalSettingAdmin,
+    onMutate: async (requireManualApproval) => {
+      await queryClient.cancelQueries({ queryKey: ADMIN_AUTO_APPROVAL_KEY });
+      const previous = queryClient.getQueryData(ADMIN_AUTO_APPROVAL_KEY);
+      queryClient.setQueryData(ADMIN_AUTO_APPROVAL_KEY, { require_manual_approval: requireManualApproval });
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(ADMIN_AUTO_APPROVAL_KEY, context.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ADMIN_AUTO_APPROVAL_KEY });
     },
   });
 }
@@ -190,4 +264,22 @@ export function useUpdateUserStatus() {
 
 export function useDeleteUser() {
   return useUserMutation((id: string) => deleteUserAdmin(id));
+}
+
+// --- Phase 4B — profile moderation -------------------------------------------
+
+export function useVerifyUser() {
+  return useUserMutation((id: string) => verifyUserAdmin(id));
+}
+
+export function useUnverifyUser() {
+  return useUserMutation((id: string) => unverifyUserAdmin(id));
+}
+
+export function useResetUserCoverImage() {
+  return useUserMutation((id: string) => resetUserCoverImageAdmin(id));
+}
+
+export function useRemoveFollowAdmin() {
+  return useMutation({ mutationFn: (followId: string) => removeFollowAdmin(followId) });
 }

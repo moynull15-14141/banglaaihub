@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { isAxiosError } from 'axios';
 import { notFound } from 'next/navigation';
 import { Download, Eye, Folder } from 'lucide-react';
@@ -8,10 +8,17 @@ import { ErrorState } from '@/components/common/ErrorState';
 import { SectionHeader } from '@/components/common/SectionHeader';
 import { StatCard } from '@/components/common/StatCard';
 import { ResourceGrid } from '@/components/resource/ResourceGrid';
+import { ActivityFeed } from '@/components/user/ActivityFeed';
+import { ContributionHeatmap } from '@/components/user/ContributionHeatmap';
+import { PinnedResourcesSection } from '@/components/user/PinnedResourcesSection';
 import { ProfileHeader } from '@/components/user/ProfileHeader';
+import { UserPostsSection } from '@/components/user/UserPostsSection';
+import { ProfileJsonLd } from '@/components/seo/JsonLd';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
+import { recordProfileView } from '@/lib/api/users';
+import { useAuth } from '@/lib/hooks/useAuth';
 import { usePublicProfile } from '@/lib/hooks/usePublicProfile';
 import type { ResourceType } from '@/types/resource';
 
@@ -21,7 +28,15 @@ interface ProfileViewProps {
 
 export function ProfileView({ username }: ProfileViewProps) {
   const { data: profile, isLoading, isError, error, refetch } = usePublicProfile(username);
+  const { user } = useAuth();
   const [typeFilter, setTypeFilter] = useState<ResourceType | 'all'>('all');
+
+  const isOwnProfile = user?.username === username;
+
+  useEffect(() => {
+    if (!isOwnProfile) void recordProfileView(username);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username]);
 
   // Phase 3B (Part 7 — Author Page) — groups the already-fetched resource
   // list by type into tabs, purely client-side: profile.resources already
@@ -67,48 +82,58 @@ export function ProfileView({ username }: ProfileViewProps) {
 
   return (
     <div className="space-y-8">
-      <ProfileHeader
-        username={profile.username}
-        displayName={profile.display_name}
-        avatarUrl={profile.avatar_url}
-        bio={profile.bio}
-        institution={profile.institution}
-        location={profile.location}
-        reputationScore={profile.reputation_score}
-        isVerified={profile.is_verified}
-        links={[
-          { label: 'Website', url: profile.website_url },
-          { label: 'GitHub', url: profile.github_url },
-          { label: 'Hugging Face', url: profile.huggingface_url },
-          { label: 'Kaggle', url: profile.kaggle_url },
-          { label: 'Google Scholar', url: profile.scholar_url },
-          { label: 'LinkedIn', url: profile.linkedin_url },
-          { label: 'X', url: profile.x_url },
-        ]}
-      />
+      <ProfileJsonLd profile={profile} />
+      <ProfileHeader profile={profile} isOwnProfile={isOwnProfile} />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <StatCard icon={Folder} label="Resources" value={profile.stats.total_resources} />
         <StatCard icon={Download} label="Downloads" value={profile.stats.total_downloads} />
         <StatCard icon={Eye} label="Views" value={profile.stats.total_views} />
       </div>
 
-      <div className="space-y-4">
-        <SectionHeader title="Published resources" />
-        {resourcesByType.size > 1 ? (
-          <Tabs value={typeFilter} onValueChange={(value) => setTypeFilter(value as ResourceType | 'all')}>
-            <TabsList>
-              <TabsTrigger value="all">All ({profile.resources.length})</TabsTrigger>
-              {Array.from(resourcesByType.entries()).map(([type, count]) => (
-                <TabsTrigger key={type} value={type}>
-                  {RESOURCE_TYPE_LABELS[type] ?? type} ({count})
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        ) : null}
-        <ResourceGrid resources={visibleResources} isLoading={false} isError={false} />
-      </div>
+      {profile.pinned_resources.length > 0 ? (
+        <div className="space-y-4">
+          <SectionHeader title="Pinned" />
+          <PinnedResourcesSection resources={profile.pinned_resources} />
+        </div>
+      ) : null}
+
+      <Tabs defaultValue="resources">
+        <TabsList>
+          <TabsTrigger value="resources">Resources</TabsTrigger>
+          <TabsTrigger value="posts">Posts</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="contributions">Contributions</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="resources" className="space-y-4 pt-4">
+          {resourcesByType.size > 1 ? (
+            <Tabs value={typeFilter} onValueChange={(value) => setTypeFilter(value as ResourceType | 'all')}>
+              <TabsList>
+                <TabsTrigger value="all">All ({profile.resources.length})</TabsTrigger>
+                {Array.from(resourcesByType.entries()).map(([type, count]) => (
+                  <TabsTrigger key={type} value={type}>
+                    {RESOURCE_TYPE_LABELS[type] ?? type} ({count})
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          ) : null}
+          <ResourceGrid resources={visibleResources} isLoading={false} isError={false} />
+        </TabsContent>
+
+        <TabsContent value="posts" className="pt-4">
+          <UserPostsSection authorId={profile.id} isOwnProfile={isOwnProfile} />
+        </TabsContent>
+
+        <TabsContent value="activity" className="pt-4">
+          <ActivityFeed username={username} />
+        </TabsContent>
+
+        <TabsContent value="contributions" className="pt-4">
+          <ContributionHeatmap username={username} joinYear={new Date(profile.created_at).getUTCFullYear()} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

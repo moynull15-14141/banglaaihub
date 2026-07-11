@@ -36,6 +36,7 @@ export interface StoredObjectMetadata {
 // ---------------------------------------------------------------------------
 export const STORAGE_FOLDERS = {
   avatars: 'avatars',
+  covers: 'covers',
   resources: 'resources',
   datasets: 'datasets',
   models: 'models',
@@ -44,6 +45,9 @@ export const STORAGE_FOLDERS = {
   thumbnails: 'thumbnails',
   attachments: 'attachments',
   temp: 'temp',
+  feedAnnouncements: 'feed-announcements',
+  posts: 'posts',
+  articles: 'articles',
 } as const;
 
 export type StorageFolder = (typeof STORAGE_FOLDERS)[keyof typeof STORAGE_FOLDERS];
@@ -119,6 +123,12 @@ const DANGEROUS_EXTENSIONS = new Set([
 export const AVATAR_ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 export const AVATAR_MAX_FILE_SIZE = 5 * 1024 * 1024;
 
+// Phase 4B — cover images are wider/larger than avatars but still capped;
+// no existing image-upload constraint to reuse for this (avatar's own
+// allowlist is the closest precedent, same extensions, larger size cap).
+export const COVER_ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
+export const COVER_MAX_FILE_SIZE = 8 * 1024 * 1024;
+
 export const DATASET_ALLOWED_EXTENSIONS = [
   '.csv', '.json', '.txt', '.zip', '.tar', '.gz', '.parquet', '.py', '.ipynb',
 ];
@@ -172,6 +182,11 @@ export const RESOURCE_ATTACHMENT_EXTENSIONS_BY_TYPE: Record<string, string[]> = 
   // Secondary model files (tokenizer/config/etc.) alongside the primary
   // weight file, which uses the single-slot `kind=model` upload instead.
   model: ['.json', '.txt', '.md', '.safetensors', '.gguf'],
+  // Inline Tiptap content images (Phase 5A-1 Content Platform) — the
+  // featured image itself uses the single-slot `kind=article_image` upload
+  // instead (uploadArticleFeaturedImage), same split as model's primary
+  // weight file vs. its secondary attachments above.
+  article: ['.jpg', '.jpeg', '.png', '.webp'],
 };
 
 export const RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE: Record<string, number> = {
@@ -183,6 +198,7 @@ export const RESOURCE_ATTACHMENT_MAX_FILE_SIZE_BY_TYPE: Record<string, number> =
   project: 200 * 1024 * 1024,
   news: 20 * 1024 * 1024,
   model: MODEL_MAX_FILE_SIZE,
+  article: THUMBNAIL_MAX_FILE_SIZE,
 };
 
 // Union of every per-type list — the loosest possible allow-list, used by
@@ -412,6 +428,21 @@ export class StorageService {
     return StorageService.getSignedDownloadUrl(key, AVATAR_URL_EXPIRY_SECONDS);
   }
 
+  static getSignedCoverUrl(key: string): Promise<string> {
+    return StorageService.getSignedDownloadUrl(key, AVATAR_URL_EXPIRY_SECONDS);
+  }
+
+  // Single resolver for every "author/user avatar" field surfaced to the
+  // client (resource author, comment/review author, follower row, etc.) —
+  // User.avatarUrl is stored as a bare R2 key by uploadAvatar(), never a
+  // usable <img src>, so every DTO that echoes it back must go through here
+  // instead of passing the raw column value through.
+  static resolveAvatarUrl(value: string | null | undefined): Promise<string | null> {
+    if (!value) return Promise.resolve(null);
+    if (/^https?:\/\//i.test(value)) return Promise.resolve(value);
+    return StorageService.getSignedAvatarUrl(value);
+  }
+
   // Single resolver for every "this DB column might hold either a plain
   // external URL or an R2 object key" field (Resource.thumbnailUrl/
   // documentationUrl, Dataset.fileUrl, Paper.pdfUrl, Tool.fileUrl). A value
@@ -459,6 +490,20 @@ export class StorageService {
     return { key: metadata.key, checksum: metadata.checksum };
   }
 
+  static async uploadCoverImage(
+    userId: string,
+    file: UploadedFile,
+  ): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.uploadObject(
+      STORAGE_FOLDERS.covers,
+      userId,
+      file,
+      COVER_ALLOWED_EXTENSIONS,
+      COVER_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
+  }
+
   static async uploadContributorSample(
     userId: string,
     file: UploadedFile,
@@ -483,6 +528,40 @@ export class StorageService {
     const metadata = await StorageService.uploadObject(
       STORAGE_FOLDERS.thumbnails,
       resourceId,
+      file,
+      THUMBNAIL_ALLOWED_EXTENSIONS,
+      THUMBNAIL_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
+  }
+
+  // Feed announcement banner image (Phase 4D) — same allow-list/size cap as
+  // resource thumbnails, own folder for storage-cost bookkeeping. Replaces
+  // (not just uploads) so editing an announcement's image cleans up the old
+  // object instead of orphaning it.
+  static async uploadFeedAnnouncementImage(
+    announcementId: string,
+    previousKey: string | null | undefined,
+    file: UploadedFile,
+  ): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.replaceObject(
+      previousKey,
+      STORAGE_FOLDERS.feedAnnouncements,
+      announcementId,
+      file,
+      THUMBNAIL_ALLOWED_EXTENSIONS,
+      THUMBNAIL_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
+  }
+
+  // Same allow-list/size cap as thumbnails/feed-announcement images. Posts
+  // upload their image in the same request as creation (unlike the
+  // announcement flow's separate follow-up upload) — see PostService.create.
+  static async uploadPostImage(postId: string, file: UploadedFile): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.uploadObject(
+      STORAGE_FOLDERS.posts,
+      postId,
       file,
       THUMBNAIL_ALLOWED_EXTENSIONS,
       THUMBNAIL_MAX_FILE_SIZE,
@@ -528,6 +607,22 @@ export class StorageService {
       file,
       MODEL_ALLOWED_EXTENSIONS,
       MODEL_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
+  }
+
+  // Article featured image (Phase 5A-1 Content Platform) — same allow-list/
+  // size cap as resource thumbnails, own folder for storage-cost bookkeeping.
+  static async uploadArticleFeaturedImage(
+    resourceId: string,
+    file: UploadedFile,
+  ): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.uploadObject(
+      STORAGE_FOLDERS.articles,
+      resourceId,
+      file,
+      THUMBNAIL_ALLOWED_EXTENSIONS,
+      THUMBNAIL_MAX_FILE_SIZE,
     );
     return { key: metadata.key, checksum: metadata.checksum };
   }

@@ -38,8 +38,28 @@ enum ResourceType {
   project
   news
   model
+  article
 
   @@map("resource_type")
+}
+
+// Internal CMS taxonomy for the `article` ResourceType — distinct from the
+// legacy bare `tutorial`/`news`/`project` ResourceType values above, which
+// predate the Content Platform and have no extension table of their own.
+enum ArticleContentType {
+  article
+  tutorial
+  guide
+  news
+  announcement
+  editorial
+  interview
+  release_notes
+  opinion
+  case_study
+  community_update
+
+  @@map("article_content_type")
 }
 
 enum ModelFormat {
@@ -77,6 +97,18 @@ enum ResourceStatus {
   approved
   rejected
   flagged
+  draft
+  scheduled
+  archived
+  // Phase 5A-3 (Editorial Workflow) — article-only pre-publish states, same
+  // pattern as draft/scheduled/archived above. `ready_to_publish` is the
+  // brief's "Approved" — deliberately NOT reusing `approved`, which already
+  // means "live/published" across every resource type.
+  idea
+  in_review
+  seo_review
+  needs_changes
+  ready_to_publish
 
   @@map("resource_status")
 }
@@ -138,6 +170,25 @@ enum NotificationType {
   contributor_application_needs_revision
   contributor_application_submitted
   contributor_application_withdrawn
+  review_received
+  resource_liked
+  review_helpful
+  review_removed
+  comment_removed
+  follow_received
+  badge_received
+  level_up
+  milestone_reached
+  new_message
+  // Phase 5A-3 (Editorial Workflow) — `mention` above is reused as-is for
+  // editorial-comment @mentions; these are distinct editorial-workflow
+  // events with no existing generic equivalent.
+  article_assigned
+  article_review_requested
+  article_needs_changes
+  article_approved
+  article_published
+  article_scheduled
 
   @@map("notification_type")
 }
@@ -157,6 +208,12 @@ enum AnalyticsEventType {
   download
   share
   bookmark
+  rating
+  review
+  comment
+  reply
+  like
+  helpful
 
   @@map("analytics_event_type")
 }
@@ -220,59 +277,111 @@ model UserRole {
 // ---------------------------------------------------------------------------
 
 model User {
-  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email           String     @unique @db.VarChar(255)
-  username        String     @unique(map: "idx_users_username") @db.VarChar(50)
-  displayName     String?    @map("display_name") @db.VarChar(100)
-  avatarUrl       String?    @map("avatar_url")
-  bio             String?
-  institution     String?    @db.VarChar(200)
-  location        String?    @db.VarChar(100)
-  websiteUrl      String?    @map("website_url")
-  githubUrl       String?    @map("github_url")
-  scholarUrl      String?    @map("scholar_url")
-  kaggleUrl       String?    @map("kaggle_url")
-  huggingfaceUrl  String?    @map("huggingface_url")
-  linkedinUrl     String?    @map("linkedin_url")
-  orcidId         String?    @map("orcid_id") @db.VarChar(19)
-  xUrl            String?    @map("x_url")
+  id                          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                       String            @unique @db.VarChar(255)
+  username                    String            @unique(map: "idx_users_username") @db.VarChar(50)
+  displayName                 String?           @map("display_name") @db.VarChar(100)
+  avatarUrl                   String?           @map("avatar_url")
+  bio                         String?
+  institution                 String?           @db.VarChar(200)
+  location                    String?           @db.VarChar(100)
+  websiteUrl                  String?           @map("website_url")
+  githubUrl                   String?           @map("github_url")
+  scholarUrl                  String?           @map("scholar_url")
+  kaggleUrl                   String?           @map("kaggle_url")
+  huggingfaceUrl              String?           @map("huggingface_url")
+  linkedinUrl                 String?           @map("linkedin_url")
+  orcidId                     String?           @map("orcid_id") @db.VarChar(19)
+  xUrl                        String?           @map("x_url")
   // Reserved for future async enrichment (GitHub/Kaggle/HuggingFace/Scholar
   // stats, AI trust score) — unused today, nullable so it needs no migration
   // when that work starts. See project-planning/10-database-design.md.
-  externalStats   Json?      @map("external_stats") @db.JsonB
-  reputationScore Int        @default(0) @map("reputation_score")
-  isVerified      Boolean    @default(false) @map("is_verified")
-  emailVerified   Boolean    @default(false) @map("email_verified")
-  status          UserStatus @default(active)
-  passwordHash    String?    @map("password_hash")
-  googleId        String?    @unique @map("google_id") @db.VarChar(100)
-  githubId        String?    @unique @map("github_id") @db.VarChar(100)
-  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(6)
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  externalStats               Json?             @map("external_stats") @db.JsonB
+  // Phase 4B — Community Foundation extensions.
+  headline                    String?           @db.VarChar(200)
+  coverImage                  String?           @map("cover_image")
+  gitlabUrl                   String?           @map("gitlab_url")
+  researchInterests           String[]          @map("research_interests")
+  skills                      String[]
+  languages                   String[]
+  profileVisibility           ProfileVisibility @default(public) @map("profile_visibility")
+  followerCount               Int               @default(0) @map("follower_count")
+  followingCount              Int               @default(0) @map("following_count")
+  reputationScore             Int               @default(0) @map("reputation_score")
+  // Settings > Notifications per-category toggles — holds the *muted*
+  // category keys (see backend/src/utils/notificationCategories.ts), so an
+  // empty array (the default) means every category is on, matching every
+  // existing user's current all-on behavior with no backfill needed.
+  mutedNotificationCategories String[]          @default([]) @map("muted_notification_categories")
+  isVerified                  Boolean           @default(false) @map("is_verified")
+  emailVerified               Boolean           @default(false) @map("email_verified")
+  status                      UserStatus        @default(active)
+  passwordHash                String?           @map("password_hash")
+  googleId                    String?           @unique @map("google_id") @db.VarChar(100)
+  githubId                    String?           @unique @map("github_id") @db.VarChar(100)
+  lastLoginAt                 DateTime?         @map("last_login_at") @db.Timestamptz(6)
+  createdAt                   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt                   DateTime?         @map("deleted_at") @db.Timestamptz(6)
 
-  authoredResources               Resource[]               @relation("ResourceAuthor")
-  approvedResources               Resource[]               @relation("ResourceApprover")
+  authoredResources               Resource[]                @relation("ResourceAuthor")
+  approvedResources               Resource[]                @relation("ResourceApprover")
   bookmarks                       Bookmark[]
   comments                        Comment[]
-  reportsFiled                    Report[]                 @relation("ReportReporter")
-  reportsReviewed                 Report[]                 @relation("ReportReviewer")
+  reviews                         Review[]
+  resourceLikes                   ResourceLike[]
+  commentLikes                    CommentLike[]
+  reviewHelpfulVotes              ReviewHelpful[]
+  reportsFiled                    Report[]                  @relation("ReportReporter")
+  reportsReviewed                 Report[]                  @relation("ReportReviewer")
   notifications                   Notification[]
   reputationEvents                ReputationEvent[]
   auditLogs                       AuditLog[]
   refreshTokens                   RefreshToken[]
   resourceAnalytics               ResourceAnalytics[]
-  userRoles                       UserRole[]               @relation("UserRoles")
-  rolesAssigned                   UserRole[]               @relation("RoleAssignedBy")
+  userRoles                       UserRole[]                @relation("UserRoles")
+  rolesAssigned                   UserRole[]                @relation("RoleAssignedBy")
   passwordHistory                 PasswordHistory[]
-  contributorApplications         ContributorApplication[] @relation("ContributorApplicant")
-  contributorApplicationsReviewed ContributorApplication[] @relation("ContributorApplicationReviewer")
+  contributorApplications         ContributorApplication[]  @relation("ContributorApplicant")
+  contributorApplicationsReviewed ContributorApplication[]  @relation("ContributorApplicationReviewer")
   uploadedResourceFiles           ResourceFile[]
   searchLogs                      SearchLog[]
+  following                       Follow[]                  @relation("Follower")
+  followers                       Follow[]                  @relation("Following")
+  pinnedResources                 PinnedResource[]
+  activities                      Activity[]
+  badges                          UserBadge[]               @relation("UserBadges")
+  badgesAwarded                   UserBadge[]               @relation("BadgeAwarder")
+  profileViewsReceived            UserAnalytics[]           @relation("ProfileAnalyticsOwner")
+  profileViewsMade                UserAnalytics[]           @relation("ProfileAnalyticsViewer")
+  feedInteractions                FeedInteraction[]         @relation("FeedInteractionUser")
+  feedMutedBy                     FeedInteraction[]         @relation("FeedInteractionContributor")
+  feedPinsCreated                 FeedPin[]                 @relation("FeedPinPinner")
+  feedAnnouncementsCreated        FeedAnnouncement[]        @relation("FeedAnnouncementCreator")
+  posts                           Post[]
+  postLikes                       PostLike[]
+  conversationsAsParticipantOne   Conversation[]            @relation("ConversationParticipantOne")
+  conversationsAsParticipantTwo   Conversation[]            @relation("ConversationParticipantTwo")
+  messagesSent                    Message[]
+  blocksMade                      UserBlock[]               @relation("UserBlockBlocker")
+  blocksReceived                  UserBlock[]               @relation("UserBlockBlocked")
+  articleAssignmentsReceived      ArticleAssignment[]       @relation("ArticleAssignmentAssignedTo")
+  articleAssignmentsMade          ArticleAssignment[]       @relation("ArticleAssignmentAssignedBy")
+  editorialCommentsAuthored       ArticleEditorialComment[] @relation("ArticleEditorialCommentAuthor")
+  editorialCommentsResolved       ArticleEditorialComment[] @relation("ArticleEditorialCommentResolvedBy")
+  articleLocksHeld                ArticleLock[]
+  articleRevisionsEdited          ArticleRevision[]
 
   @@index([deletedAt], map: "idx_users_deleted")
   @@map("users")
+}
+
+enum ProfileVisibility {
+  public
+  private
+  followers_only
+
+  @@map("profile_visibility")
 }
 
 // Added in Phase 3 — doc 10 didn't originally include this table, but doc 13
@@ -334,52 +443,66 @@ model ContributorApplication {
 // ---------------------------------------------------------------------------
 
 model Resource {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug          String         @unique(map: "idx_resources_slug") @db.VarChar(200)
-  title         String         @db.VarChar(300)
-  description   String?
-  type          ResourceType
-  categoryId    Int?           @map("category_id")
-  authorId      String?        @map("author_id") @db.Uuid
-  status        ResourceStatus @default(pending)
-  visibility    Visibility     @default(public)
-  language      String         @default("bn") @db.VarChar(10)
-  thumbnailUrl  String?        @map("thumbnail_url")
-  documentationUrl String?     @map("documentation_url")
-  externalUrl   String?        @map("external_url")
-  license       String?        @db.VarChar(100)
-  viewCount     Int            @default(0) @map("view_count")
-  downloadCount Int            @default(0) @map("download_count")
-  bookmarkCount Int            @default(0) @map("bookmark_count")
-  featured      Boolean        @default(false)
-  approvedBy    String?        @map("approved_by") @db.Uuid
-  approvedAt    DateTime?      @map("approved_at") @db.Timestamptz(6)
-  publishedAt   DateTime?      @map("published_at") @db.Timestamptz(6)
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug             String         @unique(map: "idx_resources_slug") @db.VarChar(200)
+  title            String         @db.VarChar(300)
+  description      String?
+  type             ResourceType
+  categoryId       Int?           @map("category_id")
+  authorId         String?        @map("author_id") @db.Uuid
+  status           ResourceStatus @default(pending)
+  visibility       Visibility     @default(public)
+  language         String         @default("bn") @db.VarChar(10)
+  thumbnailUrl     String?        @map("thumbnail_url")
+  documentationUrl String?        @map("documentation_url")
+  externalUrl      String?        @map("external_url")
+  license          String?        @db.VarChar(100)
+  viewCount        Int            @default(0) @map("view_count")
+  downloadCount    Int            @default(0) @map("download_count")
+  bookmarkCount    Int            @default(0) @map("bookmark_count")
+  avgRating        Float?         @map("avg_rating")
+  reviewCount      Int            @default(0) @map("review_count")
+  likeCount        Int            @default(0) @map("like_count")
+  featured         Boolean        @default(false)
+  approvedBy       String?        @map("approved_by") @db.Uuid
+  approvedAt       DateTime?      @map("approved_at") @db.Timestamptz(6)
+  publishedAt      DateTime?      @map("published_at") @db.Timestamptz(6)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz(6)
 
   category Category? @relation(fields: [categoryId], references: [id])
   author   User?     @relation("ResourceAuthor", fields: [authorId], references: [id])
   approver User?     @relation("ResourceApprover", fields: [approvedBy], references: [id])
 
-  dataset          Dataset?
-  paper            Paper?
-  tool             Tool?
-  model            Model?
-  prompt           Prompt?
-  resourceTags     ResourceTag[]
-  bookmarks        Bookmark[]
-  comments         Comment[]
-  reports          Report[]
-  analytics        ResourceAnalytics[]
-  reputationEvents ReputationEvent[]
-  files            ResourceFile[]
+  dataset                  Dataset?
+  paper                    Paper?
+  tool                     Tool?
+  model                    Model?
+  prompt                   Prompt?
+  article                  Article?
+  resourceTags             ResourceTag[]
+  bookmarks                Bookmark[]
+  comments                 Comment[]
+  reviews                  Review[]
+  likes                    ResourceLike[]
+  reports                  Report[]
+  analytics                ResourceAnalytics[]
+  reputationEvents         ReputationEvent[]
+  files                    ResourceFile[]
+  pinnedBy                 PinnedResource[]
+  feedInteractions         FeedInteraction[]
+  feedPins                 FeedPin[]
+  articleAssignments       ArticleAssignment[]
+  articleEditorialComments ArticleEditorialComment[]
+  articleLock              ArticleLock?
+  articleRevisions         ArticleRevision[]
 
   @@index([status], map: "idx_resources_status")
   @@index([type], map: "idx_resources_type")
   @@index([authorId], map: "idx_resources_author")
   @@index([deletedAt], map: "idx_resources_deleted")
+  @@index([avgRating], map: "idx_resources_avg_rating")
   @@map("resources")
 }
 
@@ -474,36 +597,190 @@ model Tool {
 }
 
 model Model {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  resourceId      String       @unique @map("resource_id") @db.Uuid
-  architecture    String?      @db.VarChar(200)
-  baseModel       String?      @map("base_model") @db.VarChar(200)
-  format          ModelFormat?
-  quantization    String?      @db.VarChar(100)
-  contextLength   Int?         @map("context_length")
-  parameters      String?      @db.VarChar(50)
-  precision       String?      @db.VarChar(50)
-  gpuRequirement  String?      @map("gpu_requirement")
-  ramRequirement  String?      @map("ram_requirement")
-  benchmarkScore  Json?        @map("benchmark_score") @db.JsonB
-  inferenceExample String?     @map("inference_example")
-  version         String       @default("v1.0") @db.VarChar(20)
-  changelog       String?
-  demoUrl         String?      @map("demo_url")
-  repositoryUrl   String?      @map("repository_url")
-  paperUrl        String?      @map("paper_url")
-  fileUrl         String?      @map("file_url")
-  fileSizeBytes   BigInt?      @map("file_size_bytes")
-  checksumSha256  String?      @map("checksum_sha256") @db.VarChar(64)
-  parentId        String?      @map("parent_id") @db.Uuid
-  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId       String       @unique @map("resource_id") @db.Uuid
+  architecture     String?      @db.VarChar(200)
+  baseModel        String?      @map("base_model") @db.VarChar(200)
+  format           ModelFormat?
+  quantization     String?      @db.VarChar(100)
+  contextLength    Int?         @map("context_length")
+  parameters       String?      @db.VarChar(50)
+  precision        String?      @db.VarChar(50)
+  gpuRequirement   String?      @map("gpu_requirement")
+  ramRequirement   String?      @map("ram_requirement")
+  benchmarkScore   Json?        @map("benchmark_score") @db.JsonB
+  inferenceExample String?      @map("inference_example")
+  version          String       @default("v1.0") @db.VarChar(20)
+  changelog        String?
+  demoUrl          String?      @map("demo_url")
+  repositoryUrl    String?      @map("repository_url")
+  paperUrl         String?      @map("paper_url")
+  fileUrl          String?      @map("file_url")
+  fileSizeBytes    BigInt?      @map("file_size_bytes")
+  checksumSha256   String?      @map("checksum_sha256") @db.VarChar(64)
+  parentId         String?      @map("parent_id") @db.Uuid
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
   parent   Model?   @relation("ModelVersions", fields: [parentId], references: [id])
   versions Model[]  @relation("ModelVersions")
 
   @@map("models")
+}
+
+model Article {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId         String             @unique @map("resource_id") @db.Uuid
+  excerpt            String?
+  body               String?
+  contentType        ArticleContentType @default(article) @map("content_type")
+  featuredImageUrl   String?            @map("featured_image_url")
+  socialImageUrl     String?            @map("social_image_url")
+  seoTitle           String?            @map("seo_title") @db.VarChar(70)
+  seoDescription     String?            @map("seo_description") @db.VarChar(200)
+  canonicalUrl       String?            @map("canonical_url")
+  // Phase 5A-2 (SEO Engine) — focusKeyword drives the title/URL/H1/meta
+  // keyword-presence checks; metaKeywords is the legacy comma-separated
+  // <meta name="keywords"> tag; featuredImageAlt makes the "image alt text"
+  // check meaningful (there's no inline-image alt to check — no
+  // @tiptap/extension-image installed, see RichTextEditor.tsx).
+  focusKeyword       String?            @map("focus_keyword")
+  metaKeywords       String?            @map("meta_keywords")
+  featuredImageAlt   String?            @map("featured_image_alt")
+  readingTimeMinutes Int?               @map("reading_time_minutes")
+  scheduledAt        DateTime?          @map("scheduled_at") @db.Timestamptz(6)
+  pinned             Boolean            @default(false)
+  editorsPick        Boolean            @default(false) @map("editors_pick")
+  allowComments      Boolean            @default(true) @map("allow_comments")
+  allowReactions     Boolean            @default(true) @map("allow_reactions")
+  allowSharing       Boolean            @default(true) @map("allow_sharing")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledAt], map: "idx_articles_scheduled")
+  @@map("articles")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5A-3 — Editorial Workflow & Publishing Suite. All four models below
+// are article-only (resourceId FK, Cascade on delete) — none are ever
+// exposed through a public route.
+// ---------------------------------------------------------------------------
+
+enum AssignmentRole {
+  writer
+  reviewer
+  seo_reviewer
+  publisher
+
+  @@map("assignment_role")
+}
+
+enum AssignmentStatus {
+  pending
+  in_progress
+  done
+
+  @@map("assignment_status")
+}
+
+// One row per role slot per article — @@unique([resourceId, role]) means
+// reassigning is an upsert, never a growing history of stale assignments.
+model ArticleAssignment {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId   String           @map("resource_id") @db.Uuid
+  role         AssignmentRole
+  assignedToId String           @map("assigned_to_id") @db.Uuid
+  assignedById String           @map("assigned_by_id") @db.Uuid
+  assignedAt   DateTime         @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  dueDate      DateTime?        @map("due_date") @db.Timestamptz(6)
+  status       AssignmentStatus @default(pending)
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  assignedTo User     @relation("ArticleAssignmentAssignedTo", fields: [assignedToId], references: [id], onDelete: Cascade)
+  assignedBy User     @relation("ArticleAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, role])
+  @@index([assignedToId], map: "idx_article_assignments_assigned_to")
+  @@map("article_assignments")
+}
+
+enum EditorialCommentKind {
+  comment
+  note
+
+  @@map("editorial_comment_kind")
+}
+
+// Private, editorial-staff-only — never reuses the public `Comment` model
+// (resource discussion pages), so there is no route path by which an
+// internal review note could ever leak publicly.
+model ArticleEditorialComment {
+  id           String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId   String               @map("resource_id") @db.Uuid
+  authorId     String               @map("author_id") @db.Uuid
+  parentId     String?              @map("parent_id") @db.Uuid
+  content      String
+  kind         EditorialCommentKind @default(comment)
+  resolved     Boolean              @default(false)
+  resolvedById String?              @map("resolved_by_id") @db.Uuid
+  resolvedAt   DateTime?            @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?            @map("deleted_at") @db.Timestamptz(6)
+
+  resource   Resource                  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  author     User                      @relation("ArticleEditorialCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  resolvedBy User?                     @relation("ArticleEditorialCommentResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  parent     ArticleEditorialComment?  @relation("ArticleEditorialCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    ArticleEditorialComment[] @relation("ArticleEditorialCommentReplies")
+
+  @@index([resourceId], map: "idx_article_editorial_comments_resource")
+  @@map("article_editorial_comments")
+}
+
+// Staleness (auto-release) is computed at read time (lastHeartbeatAt older
+// than the TTL ⇒ treated as unlocked) — no cron job exists in this codebase
+// (see scheduledPublish.job.ts's own "no job-queue infra" comment), so this
+// deliberately doesn't need one either.
+model ArticleLock {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId      String   @unique @map("resource_id") @db.Uuid
+  lockedById      String   @map("locked_by_id") @db.Uuid
+  lockedAt        DateTime @default(now()) @map("locked_at") @db.Timestamptz(6)
+  lastHeartbeatAt DateTime @default(now()) @map("last_heartbeat_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  lockedBy User     @relation(fields: [lockedById], references: [id], onDelete: Cascade)
+
+  @@map("article_locks")
+}
+
+// Append-only — restoring an old revision creates a NEW revision recording
+// the restore; nothing here is ever deleted or overwritten.
+model ArticleRevision {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId     String   @map("resource_id") @db.Uuid
+  editorId       String?  @map("editor_id") @db.Uuid
+  versionNumber  Int      @map("version_number")
+  title          String
+  body           String?
+  excerpt        String?
+  categoryId     Int?     @map("category_id")
+  focusKeyword   String?  @map("focus_keyword")
+  seoTitle       String?  @map("seo_title")
+  seoDescription String?  @map("seo_description")
+  summary        String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  editor   User?    @relation(fields: [editorId], references: [id], onDelete: SetNull)
+
+  @@index([resourceId, versionNumber], map: "idx_article_revisions_resource_version")
+  @@map("article_revisions")
 }
 
 model Prompt {
@@ -542,9 +819,10 @@ model Category {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
-  children  Category[] @relation("CategoryHierarchy")
-  resources Resource[]
+  parent           Category?         @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children         Category[]        @relation("CategoryHierarchy")
+  resources        Resource[]
+  feedInteractions FeedInteraction[]
 
   @@map("categories")
 }
@@ -596,23 +874,92 @@ model Comment {
   content     String
   isPinned    Boolean       @default(false) @map("is_pinned")
   upvoteCount Int           @default(0) @map("upvote_count")
+  likeCount   Int           @default(0) @map("like_count")
   status      CommentStatus @default(visible)
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(6)
 
-  resource Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  author   User?     @relation(fields: [authorId], references: [id])
-  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
-  replies  Comment[] @relation("CommentReplies")
+  resource Resource      @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  author   User?         @relation(fields: [authorId], references: [id])
+  parent   Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[]     @relation("CommentReplies")
+  likes    CommentLike[]
+  reports  Report[]
 
   @@map("comments")
+}
+
+model Review {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId   String        @map("resource_id") @db.Uuid
+  authorId     String        @map("author_id") @db.Uuid
+  rating       Int           @db.SmallInt
+  title        String?       @db.VarChar(200)
+  body         String?
+  helpfulCount Int           @default(0) @map("helpful_count")
+  status       CommentStatus @default(visible)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  resource     Resource        @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  author       User            @relation(fields: [authorId], references: [id])
+  helpfulVotes ReviewHelpful[]
+  reports      Report[]
+
+  @@unique([resourceId, authorId])
+  @@index([resourceId, status], map: "idx_reviews_resource_status")
+  @@index([authorId], map: "idx_reviews_author")
+  @@map("reviews")
+}
+
+model ResourceLike {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@map("resource_likes")
+}
+
+model CommentLike {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  commentId String   @map("comment_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@map("comment_likes")
+}
+
+model ReviewHelpful {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  reviewId  String   @map("review_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reviewId])
+  @@map("review_helpful_votes")
 }
 
 model Report {
   id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   reporterId  String?      @map("reporter_id") @db.Uuid
   resourceId  String?      @map("resource_id") @db.Uuid
+  commentId   String?      @map("comment_id") @db.Uuid
+  reviewId    String?      @map("review_id") @db.Uuid
+  postId      String?      @map("post_id") @db.Uuid
   reason      ReportReason
   description String?
   status      ReportStatus @default(pending)
@@ -623,9 +970,50 @@ model Report {
 
   reporter User?     @relation("ReportReporter", fields: [reporterId], references: [id])
   resource Resource? @relation(fields: [resourceId], references: [id])
+  comment  Comment?  @relation(fields: [commentId], references: [id])
+  review   Review?   @relation(fields: [reviewId], references: [id])
+  post     Post?     @relation(fields: [postId], references: [id])
   reviewer User?     @relation("ReportReviewer", fields: [reviewedBy], references: [id])
 
   @@map("reports")
+}
+
+// Phase 4E — lightweight user-generated status update (text + optional
+// image), instant-publish (no approval queue, unlike Resource submissions),
+// moderated after the fact via the same Report flow as comments/reviews.
+// Mirrors Comment's shape closely (status/soft-delete/like pattern) but is
+// freestanding — no resourceId, since it isn't attached to any resource.
+model Post {
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authorId  String?       @map("author_id") @db.Uuid
+  content   String
+  imageUrl  String?       @map("image_url")
+  likeCount Int           @default(0) @map("like_count")
+  status    CommentStatus @default(visible)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  author  User?      @relation(fields: [authorId], references: [id])
+  likes   PostLike[]
+  reports Report[]
+
+  @@index([status, createdAt], map: "idx_posts_status_created")
+  @@index([authorId], map: "idx_posts_author")
+  @@map("posts")
+}
+
+model PostLike {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  postId    String   @map("post_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@map("post_likes")
 }
 
 // ---------------------------------------------------------------------------
@@ -684,6 +1072,21 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// Generic site-wide key/value config (first key: require_manual_approval,
+// the Pending Review page's auto-approve toggle) — one small table so
+// future settings don't each need their own migration/model.
+model PlatformSetting {
+  key       String   @id @db.VarChar(100)
+  value     Json     @db.JsonB
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  // Not a relation (unlike AuditLog.actorId) — this table doesn't need a
+  // reverse `User.updatedSettings` list, and adding a Uuid-only reference
+  // avoids extending the already-long User model's relation block.
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("platform_settings")
+}
+
 model RefreshToken {
   id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId    String    @map("user_id") @db.Uuid
@@ -715,6 +1118,118 @@ model ResourceAnalytics {
   @@map("resource_analytics")
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4B — Social Graph, Activity, Badges, Profile Analytics
+// ---------------------------------------------------------------------------
+
+model Follow {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model PinnedResource {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  resourceId String   @map("resource_id") @db.Uuid
+  position   Int
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@index([userId, position])
+  @@map("pinned_resources")
+}
+
+// Dual-write activity ledger — written alongside the real side-effect in the
+// service that causes it (same pattern as ReputationEvent), not derived via a
+// live UNION query across resources/reviews/comments at read time. Also the
+// single source for the contribution heatmap (group by day).
+model Activity {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  type       String   @db.VarChar(50)
+  targetType String?  @map("target_type") @db.VarChar(50)
+  // Generic string, NOT @db.Uuid — mirrors AuditLog.targetId exactly, since
+  // targets are polymorphic (resource/comment/review/user UUIDs, but a
+  // Badge's PK is a plain autoincrement Int, not a UUID).
+  targetId   String?  @map("target_id")
+  metadata   Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("activities")
+}
+
+model Badge {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(50)
+  name        String   @db.VarChar(100)
+  description String
+  icon        String   @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  userBadges UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  badgeId   Int      @map("badge_id")
+  awardedBy String?  @map("awarded_by") @db.Uuid
+  awardedAt DateTime @default(now()) @map("awarded_at") @db.Timestamptz(6)
+
+  user    User  @relation("UserBadges", fields: [userId], references: [id], onDelete: Cascade)
+  badge   Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  awarder User? @relation("BadgeAwarder", fields: [awardedBy], references: [id])
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+enum UserAnalyticsEvent {
+  profile_view
+  profile_share
+  follow
+  unfollow
+  pinned_resource_click
+  social_link_click
+
+  @@map("user_analytics_event")
+}
+
+// Mirrors ResourceAnalytics exactly, FK flipped to User — kept as a separate
+// model rather than a nullable resourceId on ResourceAnalytics, since profile
+// events aren't resource-scoped and that FK/cascade semantics don't apply.
+model UserAnalytics {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileUserId String             @map("profile_user_id") @db.Uuid
+  eventType     UserAnalyticsEvent @map("event_type")
+  viewerId      String?            @map("viewer_id") @db.Uuid
+  ipAddress     String?            @map("ip_address") @db.Inet
+  referrer      String?
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  profileUser User  @relation("ProfileAnalyticsOwner", fields: [profileUserId], references: [id], onDelete: Cascade)
+  viewer      User? @relation("ProfileAnalyticsViewer", fields: [viewerId], references: [id])
+
+  @@map("user_analytics")
+}
+
 // Phase 3B — powers "popular searches" and the admin search-analytics view.
 // Fire-and-forget write on every /search call (same best-effort pattern as
 // syncSearchIndex — never blocks or fails the search itself).
@@ -731,4 +1246,180 @@ model SearchLog {
   @@index([query], map: "idx_search_logs_query")
   @@index([createdAt], map: "idx_search_logs_created")
   @@map("search_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4D — Intelligent Feed & Recommendation Engine
+// ---------------------------------------------------------------------------
+
+enum FeedCardType {
+  resource_published
+  resource_updated
+  follow_activity
+  badge_earned
+  reputation_milestone
+  trending_resource
+  featured_resource
+  editors_pick
+  admin_announcement
+  comment_highlight
+  user_post
+  // Reserved — no backing model/service/UI exists yet, see
+  // project-planning/10-database-design.md §29 for scope notes.
+  collection_shared
+  event_upcoming
+  sponsored_content
+
+  @@map("feed_card_type")
+}
+
+enum FeedInteractionType {
+  impression
+  click
+  hide
+  mute_contributor
+  mute_category
+  not_interested
+
+  @@map("feed_interaction_type")
+}
+
+// Per-(user, target) state row, NOT an event log — impressions/clicks are
+// upsert-incremented on the unique (userId, type, targetKey) row rather than
+// inserted per-view, so table size is bounded by users x targets-seen, not
+// users x targets x views. Kept separate from resource_analytics so the
+// existing trending-score scan there isn't degraded by an impression
+// firehose, and so hide/mute existence checks stay a cheap indexed lookup.
+model FeedInteraction {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String              @map("user_id") @db.Uuid
+  resourceId      String?             @map("resource_id") @db.Uuid
+  contributorId   String?             @map("contributor_id") @db.Uuid
+  categoryId      Int?                @map("category_id")
+  // Mirrors AuditLog.targetId / Activity.targetId's polymorphic-string
+  // precedent — resourceId, contributorId, or categoryId, whichever this row
+  // targets. Exists purely so the unique constraint below works across three
+  // mutually-exclusive nullable FKs (Postgres treats NULL as distinct, so a
+  // unique index on the FK columns alone would not prevent duplicate mutes).
+  targetKey       String              @map("target_key")
+  type            FeedInteractionType
+  impressionCount Int                 @default(0) @map("impression_count")
+  revokedAt       DateTime?           @map("revoked_at") @db.Timestamptz(6)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user        User      @relation("FeedInteractionUser", fields: [userId], references: [id], onDelete: Cascade)
+  resource    Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  contributor User?     @relation("FeedInteractionContributor", fields: [contributorId], references: [id], onDelete: Cascade)
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, targetKey])
+  @@index([userId, type], map: "idx_feed_interactions_user")
+  @@index([resourceId, type], map: "idx_feed_interactions_resource")
+  @@map("feed_interactions")
+}
+
+enum FeedPinType {
+  featured
+  editors_pick
+
+  @@map("feed_pin_type")
+}
+
+// Admin-curated placement, modeled on pinned_resources but scoped to admin
+// curation with a type discriminator and optional scheduling window so
+// Editor's Picks can rotate without deleting/recreating rows.
+model FeedPin {
+  id         String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId String      @map("resource_id") @db.Uuid
+  pinType    FeedPinType @map("pin_type")
+  position   Int
+  pinnedBy   String      @map("pinned_by") @db.Uuid
+  note       String?
+  startsAt   DateTime?   @map("starts_at") @db.Timestamptz(6)
+  endsAt     DateTime?   @map("ends_at") @db.Timestamptz(6)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  pinner   User     @relation("FeedPinPinner", fields: [pinnedBy], references: [id])
+
+  @@unique([resourceId, pinType])
+  @@index([pinType, position], map: "idx_feed_pins_type_position")
+  @@map("feed_pins")
+}
+
+model FeedAnnouncement {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title     String    @db.VarChar(200)
+  body      String
+  // Banner image shown on the card — distinct from linkUrl, which is the
+  // "Learn more" click-through destination, not the image itself.
+  imageUrl  String?   @map("image_url")
+  linkUrl   String?   @map("link_url")
+  createdBy String    @map("created_by") @db.Uuid
+  isActive  Boolean   @default(true) @map("is_active")
+  startsAt  DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt    DateTime? @map("ends_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  creator User @relation("FeedAnnouncementCreator", fields: [createdBy], references: [id])
+
+  @@index([isActive, startsAt, endsAt], map: "idx_feed_announcements_active")
+  @@map("feed_announcements")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4F — Direct Messaging (1-on-1, polling-based — no WebSocket infra
+// in this stack yet; see project-planning/10-database-design.md).
+// ---------------------------------------------------------------------------
+
+// One row per pair of users, canonically ordered (participantOneId is
+// always the lexicographically smaller UUID) so a lookup/creation never has
+// to check both (A,B) and (B,A) — the unique constraint alone prevents
+// duplicate conversations for the same pair.
+model Conversation {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  participantOneId String    @map("participant_one_id") @db.Uuid
+  participantTwoId String    @map("participant_two_id") @db.Uuid
+  lastMessageAt    DateTime? @map("last_message_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  participantOne User      @relation("ConversationParticipantOne", fields: [participantOneId], references: [id], onDelete: Cascade)
+  participantTwo User      @relation("ConversationParticipantTwo", fields: [participantTwoId], references: [id], onDelete: Cascade)
+  messages       Message[]
+
+  @@unique([participantOneId, participantTwoId])
+  @@index([participantOneId, lastMessageAt])
+  @@index([participantTwoId, lastMessageAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String    @map("conversation_id") @db.Uuid
+  senderId       String?   @map("sender_id") @db.Uuid
+  content        String    @db.VarChar(2000)
+  readAt         DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User?        @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model UserBlock {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  blocker User @relation("UserBlockBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("UserBlockBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("user_blocks")
 }

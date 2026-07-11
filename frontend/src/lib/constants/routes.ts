@@ -6,6 +6,7 @@
 // resourceHref below), only the listing URL is dedicated.
 export const ROUTES = {
   home: '/',
+  feed: '/feed',
   resources: '/resources',
   resource: (slug: string) => `/resources/${slug}`,
   datasets: '/datasets',
@@ -16,6 +17,8 @@ export const ROUTES = {
   tool: (slug: string) => `/tools/${slug}`,
   models: '/models',
   model: (slug: string) => `/models/${slug}`,
+  articles: '/articles',
+  article: (slug: string) => `/articles/${slug}`,
   tutorials: '/tutorials',
   prompts: '/prompts',
   prompt: (slug: string) => `/prompts/${slug}`,
@@ -23,6 +26,8 @@ export const ROUTES = {
   news: '/news',
   search: '/search',
   userProfile: (username: string) => `/users/${username}`,
+  userFollowers: (username: string) => `/users/${username}/followers`,
+  userFollowing: (username: string) => `/users/${username}/following`,
   categories: '/categories',
   category: (slug: string) => `/categories/${slug}`,
   tag: (slug: string) => `/tags/${slug}`,
@@ -48,9 +53,18 @@ export const ROUTES = {
   adminPending: '/admin/pending',
   adminUsers: '/admin/users',
   adminReports: '/admin/reports',
+  adminBadges: '/admin/badges',
   adminContributorApplications: '/admin/contributor-applications',
   adminContributorApplication: (id: string) => `/admin/contributor-applications/${id}`,
   adminSearchAnalytics: '/admin/search-analytics',
+  adminFeed: '/admin/feed',
+  adminContentArticles: '/admin/content/articles',
+  adminContentArticleNew: '/admin/content/articles/new',
+  adminContentArticleEdit: (slug: string) => `/admin/content/articles/${slug}/edit`,
+  adminContentSeo: '/admin/content/seo',
+  adminContentEditorial: '/admin/content/editorial',
+  adminContentCalendar: '/admin/content/calendar',
+  adminContentScheduleQueue: '/admin/content/schedule-queue',
 
   terms: '/terms',
   privacy: '/privacy',
@@ -78,6 +92,8 @@ export function resourceHref(type: string, slug: string): string {
       return ROUTES.model(slug);
     case 'prompt':
       return ROUTES.prompt(slug);
+    case 'article':
+      return ROUTES.article(slug);
     default:
       return ROUTES.resource(slug);
   }

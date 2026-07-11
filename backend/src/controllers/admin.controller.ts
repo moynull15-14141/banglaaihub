@@ -1,6 +1,13 @@
 import type { Request, Response } from 'express';
+import { ActivityService } from '../services/activity.service';
 import { AdminService } from '../services/admin.service';
+import { BadgeService } from '../services/badge.service';
 import { ContributorApplicationService } from '../services/contributor-application.service';
+import { FeedAdminService } from '../services/feed-admin.service';
+import { FeedService } from '../services/feed.service';
+import { FeedSettingsService } from '../services/feed-settings.service';
+import { FollowService } from '../services/follow.service';
+import { PlatformSettingsService } from '../services/platform-settings.service';
 import { ReportService } from '../services/report.service';
 import { ResourceService } from '../services/resources.service';
 import { SearchService } from '../services/search.service';
@@ -10,14 +17,26 @@ import { sendSuccess } from '../utils/apiResponse';
 import { parsePagination } from '../utils/pagination';
 import type { AccessTokenPayload } from '../utils/jwt';
 import type {
+  CreateBadgeInput,
+  GrantBadgeInput,
   ListAuditLogsQuery,
   ListReportsQuery,
   ListUsersQuery,
   RejectReportInput,
+  UpdateAutoApprovalSettingInput,
+  UpdateBadgeInput,
   UpdateReportStatusInput,
   UpdateUserRolesInput,
   UpdateUserStatusInput,
 } from '../validators/admin.validator';
+import type {
+  CreateFeedAnnouncementInput,
+  CreateFeedPinInput,
+  PreviewFeedInput,
+  UpdateFeedAnnouncementInput,
+  UpdateFeedConfigInput,
+  UpdateFeedPinInput,
+} from '../validators/feed.validator';
 import type { UpdateProfileInput } from '../validators/user.validator';
 import type { ListResourcesQuery } from '../validators/resource.validator';
 import type {
@@ -32,6 +51,13 @@ function requireUser(req: Request): AccessTokenPayload {
   return req.user;
 }
 
+// Same shape as auth.controller.ts's requestContext() — passed through to
+// writeAuditLog() call sites so the ip/user-agent columns are populated
+// consistently with every other audited action.
+function requestContext(req: Request): { ipAddress?: string; userAgent?: string } {
+  return { ipAddress: req.ip, userAgent: req.headers['user-agent'] };
+}
+
 function requireParam(req: Request, name: string): string {
   const value = req.params[name];
   if (typeof value !== 'string') {
@@ -41,6 +67,21 @@ function requireParam(req: Request, name: string): string {
 }
 
 // --- Resource moderation ------------------------------------------------------
+
+export async function getAutoApprovalSetting(_req: Request, res: Response): Promise<void> {
+  const requireManualApproval = await PlatformSettingsService.getRequireManualApproval();
+  sendSuccess(res, { require_manual_approval: requireManualApproval });
+}
+
+export async function updateAutoApprovalSetting(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = req.validatedBody as UpdateAutoApprovalSettingInput;
+  const requireManualApproval = await PlatformSettingsService.setRequireManualApproval(
+    body.require_manual_approval,
+    user.userId,
+  );
+  sendSuccess(res, { require_manual_approval: requireManualApproval });
+}
 
 export async function listPendingResources(req: Request, res: Response): Promise<void> {
   const query = (req.validatedQuery ?? {}) as ListResourcesQuery;
@@ -126,6 +167,81 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
   const actor = requireUser(req);
   await UserService.softDeleteUser(requireParam(req, 'id'), actor.userId);
   sendSuccess(res, { message: 'User deleted.' });
+}
+
+// --- Phase 4B — profile moderation -------------------------------------------
+
+export async function verifyUser(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const user = await UserService.setVerified(requireParam(req, 'id'), true, actor.userId);
+  sendSuccess(res, user);
+}
+
+export async function unverifyUser(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const user = await UserService.setVerified(requireParam(req, 'id'), false, actor.userId);
+  sendSuccess(res, user);
+}
+
+export async function resetUserCoverImage(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  await UserService.adminResetCoverImage(requireParam(req, 'id'), actor.userId);
+  sendSuccess(res, { message: 'Cover image reset.' });
+}
+
+export async function removeFollow(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  await FollowService.adminRemoveFollow(requireParam(req, 'id'), actor.userId);
+  sendSuccess(res, { message: 'Follow relationship removed.' });
+}
+
+export async function getUserActivity(req: Request, res: Response): Promise<void> {
+  const pagination = parsePagination(req.query as Record<string, string>);
+  // Admin viewer always bypasses profile-visibility gating.
+  const user = await UserService.getUserByIdAdmin(requireParam(req, 'id'));
+  const username = (user as { username: string }).username;
+  const result = await ActivityService.list(username, pagination, null, true);
+  sendSuccess(res, result.data, result.meta);
+}
+
+// --- Phase 4B — badges --------------------------------------------------------
+
+export async function listBadges(_req: Request, res: Response): Promise<void> {
+  const badges = await BadgeService.listCatalog();
+  sendSuccess(res, badges);
+}
+
+export async function createBadge(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const body = req.validatedBody as CreateBadgeInput;
+  const badge = await BadgeService.adminCreateBadge(body, actor.userId);
+  sendSuccess(res, badge, undefined, 201);
+}
+
+export async function updateBadge(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const body = req.validatedBody as UpdateBadgeInput;
+  const badge = await BadgeService.adminUpdateBadge(Number(requireParam(req, 'id')), body, actor.userId);
+  sendSuccess(res, badge);
+}
+
+export async function deleteBadge(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  await BadgeService.adminDeleteBadge(Number(requireParam(req, 'id')), actor.userId);
+  sendSuccess(res, { message: 'Badge deleted.' });
+}
+
+export async function grantBadge(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const body = req.validatedBody as GrantBadgeInput;
+  await BadgeService.adminGrant(requireParam(req, 'id'), body.badge_id, actor.userId);
+  sendSuccess(res, { message: 'Badge granted.' }, undefined, 201);
+}
+
+export async function revokeBadge(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  await BadgeService.adminRevoke(requireParam(req, 'id'), Number(requireParam(req, 'badgeId')), actor.userId);
+  sendSuccess(res, { message: 'Badge revoked.' });
 }
 
 // --- Reports ---------------------------------------------------------------------
@@ -245,6 +361,108 @@ export async function listAuditLogs(req: Request, res: Response): Promise<void> 
 export async function getDashboard(_req: Request, res: Response): Promise<void> {
   const stats = await AdminService.getDashboard();
   sendSuccess(res, stats);
+}
+
+// --- Feed engine config (Phase 4D) ---------------------------------------------------
+
+export async function getFeedConfig(_req: Request, res: Response): Promise<void> {
+  const config = await FeedSettingsService.getConfigDto();
+  sendSuccess(res, config);
+}
+
+export async function updateFeedConfig(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = (req.validatedBody ?? {}) as UpdateFeedConfigInput;
+  const config = await FeedSettingsService.updateConfig(body, user.userId, requestContext(req));
+  sendSuccess(res, config);
+}
+
+// --- Live Feed Preview (Phase 4C, Stage 1) --------------------------------------------
+// Read-only diagnostic: runs the real ranking engine against a draft config
+// and a simulated persona, never persists anything (see FeedService.previewFeed
+// and FeedAdminService.resolvePersonaUserId).
+
+export async function previewFeedConfig(req: Request, res: Response): Promise<void> {
+  const body = req.validatedBody as PreviewFeedInput;
+  const current = await FeedSettingsService.getConfig();
+  const configOverride = FeedSettingsService.mergeConfigPatch(current, body.config ?? {});
+
+  const simulateUserId = await FeedAdminService.resolvePersonaUserId(body.persona);
+  const result = await FeedService.previewFeed(body.mode, simulateUserId, configOverride);
+  sendSuccess(res, { cards: result.data, persona: body.persona, simulated_user_id: simulateUserId });
+}
+
+export async function rollbackFeedConfig(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const config = await FeedSettingsService.rollbackToVersion(
+    requireParam(req, 'auditLogId'),
+    user.userId,
+    requestContext(req),
+  );
+  sendSuccess(res, config);
+}
+
+// --- Feed pins (Phase 4D — Featured / Editor's Pick placement) -----------------------
+
+export async function listFeedPins(_req: Request, res: Response): Promise<void> {
+  const pins = await FeedAdminService.listPins();
+  sendSuccess(res, pins);
+}
+
+export async function createFeedPin(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = req.validatedBody as CreateFeedPinInput;
+  const pin = await FeedAdminService.createPin(body, user.userId);
+  sendSuccess(res, pin, undefined, 201);
+}
+
+export async function updateFeedPin(req: Request, res: Response): Promise<void> {
+  const body = req.validatedBody as UpdateFeedPinInput;
+  const pin = await FeedAdminService.updatePin(requireParam(req, 'id'), body);
+  sendSuccess(res, pin);
+}
+
+export async function deleteFeedPin(req: Request, res: Response): Promise<void> {
+  await FeedAdminService.deletePin(requireParam(req, 'id'));
+  sendSuccess(res, { message: 'Pin removed.' });
+}
+
+// --- Feed announcements (Phase 4D) ----------------------------------------------------
+
+export async function listFeedAnnouncements(_req: Request, res: Response): Promise<void> {
+  const announcements = await FeedAdminService.listAnnouncements();
+  sendSuccess(res, announcements);
+}
+
+export async function createFeedAnnouncement(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = req.validatedBody as CreateFeedAnnouncementInput;
+  const announcement = await FeedAdminService.createAnnouncement(body, user.userId);
+  sendSuccess(res, announcement, undefined, 201);
+}
+
+export async function updateFeedAnnouncement(req: Request, res: Response): Promise<void> {
+  const body = req.validatedBody as UpdateFeedAnnouncementInput;
+  const announcement = await FeedAdminService.updateAnnouncement(requireParam(req, 'id'), body);
+  sendSuccess(res, announcement);
+}
+
+export async function deleteFeedAnnouncement(req: Request, res: Response): Promise<void> {
+  await FeedAdminService.deleteAnnouncement(requireParam(req, 'id'));
+  sendSuccess(res, { message: 'Announcement removed.' });
+}
+
+export async function uploadFeedAnnouncementImage(req: Request, res: Response): Promise<void> {
+  if (!req.file) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'No file provided.');
+  }
+  const announcement = await FeedAdminService.uploadAnnouncementImage(requireParam(req, 'id'), req.file);
+  sendSuccess(res, announcement);
+}
+
+export async function removeFeedAnnouncementImage(req: Request, res: Response): Promise<void> {
+  const announcement = await FeedAdminService.removeAnnouncementImage(requireParam(req, 'id'));
+  sendSuccess(res, announcement);
 }
 
 // --- Search analytics (Phase 3B) ---------------------------------------------------

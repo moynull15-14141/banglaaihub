@@ -49,6 +49,9 @@ interface FilterSidebarProps {
   tags?: string[];
   onTagsChange?: (value: string[] | undefined) => void;
   onClear: () => void;
+  // Off when rendered inside the mobile filter Sheet, which already has its
+  // own SheetTitle — showing both reads as a duplicated "Filters" heading.
+  showHeading?: boolean;
 }
 
 export function FilterSidebar({
@@ -69,6 +72,7 @@ export function FilterSidebar({
   tags,
   onTagsChange,
   onClear,
+  showHeading = true,
 }: FilterSidebarProps) {
   const { data: categories } = useCategories();
   const { data: licenses } = useLicenseFacets();
@@ -108,10 +112,12 @@ export function FilterSidebar({
 
   return (
     <aside className="space-y-5" aria-label="Filters">
-      <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-        <SlidersHorizontal className="size-4 text-brand" aria-hidden="true" />
-        Filters
-      </div>
+      {showHeading ? (
+        <div className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+          <SlidersHorizontal className="size-4 text-brand" aria-hidden="true" />
+          Filters
+        </div>
+      ) : null}
 
       {showTypeFilter && onTypeChange ? (
         <div className="space-y-1.5">
@@ -190,7 +196,7 @@ export function FilterSidebar({
             id="filter-author"
             value={authorText}
             onChange={(event) => setAuthorText(event.target.value)}
-            placeholder="Username"
+            placeholder="Username or name"
           />
         </div>
       ) : null}

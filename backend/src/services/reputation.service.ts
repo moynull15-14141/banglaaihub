@@ -1,5 +1,9 @@
 import { prisma } from '../config/database';
 import { ApiError } from '../utils/ApiError';
+import { resolveContributorLevel } from '../utils/contributorLevel';
+import { ActivityService } from './activity.service';
+import { BadgeService } from './badge.service';
+import { NotificationService } from './notification.service';
 
 const RECENT_EVENTS_LIMIT = 20;
 
@@ -15,6 +19,11 @@ export class ReputationService {
     resourceId?: string | null;
     description?: string | null;
   }): Promise<void> {
+    const before = await prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { reputationScore: true },
+    });
+
     await prisma.$transaction([
       prisma.reputationEvent.create({
         data: {
@@ -30,6 +39,29 @@ export class ReputationService {
         data: { reputationScore: { increment: input.points } },
       }),
     ]);
+
+    // Phase 4B — "Contributor Level" is computed from reputationScore, never
+    // stored (see contributorLevel.ts). Detect a tier crossing here so
+    // level_up fires exactly once, at the moment it actually happens.
+    if (before) {
+      const beforeLevel = resolveContributorLevel(before.reputationScore);
+      const afterLevel = resolveContributorLevel(before.reputationScore + input.points);
+      if (afterLevel.level !== beforeLevel.level) {
+        await ActivityService.record({
+          userId: input.userId,
+          type: 'level_up',
+          metadata: { level: afterLevel.level },
+        });
+        await NotificationService.create({
+          userId: input.userId,
+          type: 'level_up',
+          title: `You reached ${afterLevel.level}!`,
+          message: 'Your contributions have leveled up your contributor tier.',
+        });
+      }
+    }
+
+    await BadgeService.checkAndAwardMilestones(input.userId);
   }
 
   static async getUserReputationSummaryByUsername(

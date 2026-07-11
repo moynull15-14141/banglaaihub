@@ -9,6 +9,12 @@ export const listUsersQuerySchema = z.object({
   role: z.string().optional(),
   status: z.enum(USER_STATUSES).optional(),
   sort: z.enum(['newest', 'oldest']).optional(),
+  // 'staff' scopes the Users page down to accounts holding a role that
+  // grants any admin-panel access (moderator/editor/admin/super_admin) —
+  // see users.service.ts's STAFF_ROLES. Deliberately excludes
+  // contributor/verified_contributor: those are a content-trust tier
+  // earned by regular members, not website-management access.
+  scope: z.enum(['all', 'staff']).optional(),
 });
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
 
@@ -22,9 +28,17 @@ export const updateUserRolesSchema = z.object({
 });
 export type UpdateUserRolesInput = z.infer<typeof updateUserRolesSchema>;
 
+export const updateAutoApprovalSettingSchema = z.object({
+  require_manual_approval: z.boolean(),
+});
+export type UpdateAutoApprovalSettingInput = z.infer<typeof updateAutoApprovalSettingSchema>;
+
+const REPORT_TARGET_TYPES = ['resource', 'comment', 'review', 'post'] as const;
+
 export const listReportsQuerySchema = z.object({
   status: z.enum(REPORT_STATUSES).optional(),
   reason: z.enum(REPORT_REASONS).optional(),
+  target_type: z.enum(REPORT_TARGET_TYPES).optional(),
 });
 export type ListReportsQuery = z.infer<typeof listReportsQuerySchema>;
 
@@ -48,3 +62,29 @@ export const listAuditLogsQuerySchema = z.object({
   sort: z.enum(['newest', 'oldest']).optional(),
 });
 export type ListAuditLogsQuery = z.infer<typeof listAuditLogsQuerySchema>;
+
+// --- Phase 4B ----------------------------------------------------------------
+
+export const createBadgeSchema = z.object({
+  key: z
+    .string()
+    .min(2)
+    .max(50)
+    .regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, and underscores only.'),
+  name: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  icon: z.string().min(1).max(50),
+});
+export type CreateBadgeInput = z.infer<typeof createBadgeSchema>;
+
+export const updateBadgeSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().min(1).max(500).optional(),
+  icon: z.string().min(1).max(50).optional(),
+});
+export type UpdateBadgeInput = z.infer<typeof updateBadgeSchema>;
+
+export const grantBadgeSchema = z.object({
+  badge_id: z.number().int().positive(),
+});
+export type GrantBadgeInput = z.infer<typeof grantBadgeSchema>;

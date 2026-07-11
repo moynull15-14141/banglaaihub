@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { isAxiosError } from 'axios';
 import { notFound } from 'next/navigation';
-import { Hash } from 'lucide-react';
+import { Hash, SlidersHorizontal } from 'lucide-react';
 import { Breadcrumb } from '@/components/common/Breadcrumb';
 import { CardGridSkeleton } from '@/components/common/LoadingSkeleton';
 import { ErrorState } from '@/components/common/ErrorState';
@@ -12,7 +12,10 @@ import { FilterSidebar } from '@/components/resource/FilterSidebar';
 import { ResourceGrid, type ResourceGridView } from '@/components/resource/ResourceGrid';
 import { SortDropdown } from '@/components/resource/SortDropdown';
 import { ViewToggle } from '@/components/resource/ViewToggle';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTag } from '@/lib/hooks/useTags';
 import { useResources } from '@/lib/hooks/useResources';
@@ -37,6 +40,7 @@ interface TagViewProps {
 
 export function TagView({ slug }: TagViewProps) {
   const [view, setView] = useState<ResourceGridView>('grid');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const tag = useTag(slug);
 
   const { page, sort, type, category, language, license, author, verified, updateParams, clearFilters } =
@@ -73,6 +77,25 @@ export function TagView({ slug }: TagViewProps) {
 
   if (!tag.data) return null;
 
+  const activeFilterCount = [type, category, language, license, author, verified].filter(Boolean).length;
+
+  const filterSidebarProps = {
+    showTypeFilter: true,
+    type,
+    onTypeChange: (value: string | undefined) => updateParams({ type: value }),
+    category,
+    onCategoryChange: (value: string | undefined) => updateParams({ category: value }),
+    language,
+    onLanguageChange: (value: string | undefined) => updateParams({ language: value }),
+    license,
+    onLicenseChange: (value: string | undefined) => updateParams({ license: value }),
+    author,
+    onAuthorChange: (value: string | undefined) => updateParams({ author: value }),
+    verified,
+    onVerifiedChange: (value: boolean) => updateParams({ verified: value ? 'true' : undefined }),
+    onClear: clearFilters,
+  };
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: 'Tags', href: ROUTES.resources }, { label: tag.data.name }]} />
@@ -88,23 +111,8 @@ export function TagView({ slug }: TagViewProps) {
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[240px_1fr]">
-        <Card className="h-fit p-4">
-          <FilterSidebar
-            showTypeFilter
-            type={type}
-            onTypeChange={(value) => updateParams({ type: value })}
-            category={category}
-            onCategoryChange={(value) => updateParams({ category: value })}
-            language={language}
-            onLanguageChange={(value) => updateParams({ language: value })}
-            license={license}
-            onLicenseChange={(value) => updateParams({ license: value })}
-            author={author}
-            onAuthorChange={(value) => updateParams({ author: value })}
-            verified={verified}
-            onVerifiedChange={(value) => updateParams({ verified: value ? 'true' : undefined })}
-            onClear={clearFilters}
-          />
+        <Card className="hidden h-fit p-4 lg:block">
+          <FilterSidebar {...filterSidebarProps} />
         </Card>
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-2">
@@ -112,6 +120,15 @@ export function TagView({ slug }: TagViewProps) {
               {resources.data ? `${resources.data.meta.total ?? 0} results` : null}
             </p>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setFiltersOpen(true)}>
+                <SlidersHorizontal className="size-4" aria-hidden="true" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <Badge variant="brand" className="h-4 min-w-4 px-1 text-[10px]">
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
+              </Button>
               <ViewToggle value={view} onChange={setView} />
               <SortDropdown
                 options={SORT_OPTIONS}
@@ -137,6 +154,15 @@ export function TagView({ slug }: TagViewProps) {
           ) : null}
         </div>
       </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="left" className="overflow-y-auto p-4">
+          <SheetHeader className="p-0">
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <FilterSidebar {...filterSidebarProps} showHeading={false} />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

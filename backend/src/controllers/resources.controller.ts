@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { LikeService } from '../services/like.service';
 import { ReportService } from '../services/report.service';
 import { ResourceService } from '../services/resources.service';
 import { UserService } from '../services/users.service';
@@ -20,6 +21,7 @@ import type {
   UpdateResourceInput,
   UploadResourceFileQuery,
 } from '../validators/resource.validator';
+import type { PublishArticleInput } from '../validators/article.validator';
 
 function requireUser(req: Request): AccessTokenPayload {
   if (!req.user) {
@@ -105,6 +107,21 @@ export async function share(req: Request, res: Response): Promise<void> {
   sendSuccess(res, { message: 'Share recorded.' });
 }
 
+// Phase 5A-1 — Content Platform: publish/schedule/archive an article.
+
+export async function publishArticle(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const body = req.validatedBody as PublishArticleInput;
+  const resource = await ResourceService.publishArticle(requireParam(req, 'slug'), user, body);
+  sendSuccess(res, resource);
+}
+
+export async function archiveArticle(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const resource = await ResourceService.archiveArticle(requireParam(req, 'slug'), user);
+  sendSuccess(res, resource);
+}
+
 // Phase 3A.1 — Prompt Fork / Version History.
 
 export async function fork(req: Request, res: Response): Promise<void> {
@@ -176,11 +193,23 @@ export async function removeBookmark(req: Request, res: Response): Promise<void>
   sendSuccess(res, { message: 'Bookmark removed.' });
 }
 
+export async function likeResource(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  await LikeService.likeResource(user.userId, requireParam(req, 'slug'));
+  sendSuccess(res, { message: 'Resource liked.' }, undefined, 201);
+}
+
+export async function unlikeResource(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  await LikeService.unlikeResource(user.userId, requireParam(req, 'slug'));
+  sendSuccess(res, { message: 'Resource unliked.' });
+}
+
 export async function report(req: Request, res: Response): Promise<void> {
   const user = requireUser(req);
   const body = req.validatedBody as CreateReportInput;
   const resourceId = await ResourceService.resolveIdBySlug(requireParam(req, 'slug'));
-  const result = await ReportService.create(user.userId, resourceId, body.reason, body.description);
+  const result = await ReportService.create(user.userId, { resourceId }, body.reason, body.description);
   sendSuccess(res, result, undefined, 201);
 }
 

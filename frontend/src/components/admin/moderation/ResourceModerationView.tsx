@@ -13,13 +13,17 @@ import { ModerationTable } from '@/components/admin/moderation/ModerationTable';
 import { ResourceDetailDrawer } from '@/components/admin/moderation/ResourceDetailDrawer';
 import { ConfirmActionDialog } from '@/components/admin/moderation/ConfirmActionDialog';
 import { RejectResourceDialog } from '@/components/admin/moderation/RejectResourceDialog';
+import { Card, CardContent } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import {
   useAdminPendingResources,
   useApproveResource,
+  useAutoApprovalSetting,
   useFeatureResource,
   useRejectResource,
   useRestoreResource,
   useUnfeatureResource,
+  useUpdateAutoApprovalSetting,
 } from '@/lib/hooks/useAdmin';
 import type { ListResourcesParams, Resource } from '@/types/resource';
 
@@ -111,6 +115,10 @@ export function ResourceModerationView() {
   const unfeatureMutation = useUnfeatureResource();
   const restoreMutation = useRestoreResource();
 
+  const { data: autoApprovalSetting } = useAutoApprovalSetting();
+  const updateAutoApprovalSetting = useUpdateAutoApprovalSetting();
+  const requireManualApproval = autoApprovalSetting?.require_manual_approval ?? true;
+
   return (
     <PageContainer>
       <h1 className="font-heading text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -119,6 +127,34 @@ export function ResourceModerationView() {
       <p className="mt-1 text-muted-foreground">
         Approve, reject, and feature resource submissions.
       </p>
+
+      <Card className="mt-4">
+        <CardContent className="flex items-center justify-between gap-4 py-4">
+          <div>
+            <label htmlFor="require-manual-approval" className="text-sm font-medium">
+              Require manual approval
+            </label>
+            <p className="text-sm text-muted-foreground">
+              {requireManualApproval
+                ? 'On — every submission waits here for an admin to approve, reject, or feature it.'
+                : "Off — contributor submissions publish immediately, skipping this queue. No automated content check exists yet, so everything auto-publishes unconditionally until one is added."}
+            </p>
+          </div>
+          <Switch
+            id="require-manual-approval"
+            checked={requireManualApproval}
+            disabled={updateAutoApprovalSetting.isPending}
+            onCheckedChange={(checked) =>
+              updateAutoApprovalSetting.mutate(checked, {
+                onSuccess: () =>
+                  toast.success(checked ? 'Manual approval is required again.' : 'Submissions will now auto-publish.'),
+                onError: () => toast.error("Couldn't update this setting. Please try again."),
+              })
+            }
+            aria-label="Require manual approval for resource submissions"
+          />
+        </CardContent>
+      </Card>
 
       <div className="mt-6 space-y-4">
         <ModerationFilters

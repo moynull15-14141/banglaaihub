@@ -27,6 +27,11 @@ export interface SearchDocument {
   // deeper nested one) since MeiliSearch's filterableAttributes only
   // supports flat document fields.
   format: string | null;
+  // Phase 5A-1 (Content Platform) — sourced from resource.article, null for
+  // every other resource type. Same flat-field reasoning as `format` above.
+  content_type: string | null;
+  excerpt: string | null;
+  reading_time_minutes: number | null;
   tags: string[];
   author_id: string | null;
   author_name: string | null;
@@ -36,6 +41,8 @@ export interface SearchDocument {
   view_count: number;
   download_count: number;
   bookmark_count: number;
+  avg_rating: number | null;
+  review_count: number;
   published_at: string | null;
   created_at: string;
   updated_at: string;
@@ -56,6 +63,9 @@ function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
     category_slug: resource.category?.slug ?? null,
     license: resource.license,
     format: resource.model?.format ?? null,
+    content_type: resource.article?.contentType ?? null,
+    excerpt: resource.article?.excerpt ?? null,
+    reading_time_minutes: resource.article?.readingTimeMinutes ?? null,
     tags: resource.resourceTags.map((rt) => rt.tag.name),
     author_id: resource.author?.id ?? null,
     author_name: resource.author?.username ?? null,
@@ -64,6 +74,8 @@ function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
     view_count: resource.viewCount,
     download_count: resource.downloadCount,
     bookmark_count: resource.bookmarkCount,
+    avg_rating: resource.avgRating,
+    review_count: resource.reviewCount,
     published_at: resource.publishedAt?.toISOString() ?? null,
     created_at: resource.createdAt.toISOString(),
     updated_at: resource.updatedAt.toISOString(),
@@ -83,6 +95,9 @@ function toSearchResultDto(doc: SearchDocument): Record<string, unknown> {
       : null,
     license: doc.license,
     format: doc.format,
+    content_type: doc.content_type,
+    excerpt: doc.excerpt,
+    reading_time_minutes: doc.reading_time_minutes,
     tags: doc.tags,
     author: doc.author_id
       ? {
@@ -95,6 +110,8 @@ function toSearchResultDto(doc: SearchDocument): Record<string, unknown> {
     view_count: doc.view_count,
     download_count: doc.download_count,
     bookmark_count: doc.bookmark_count,
+    avg_rating: doc.avg_rating,
+    review_count: doc.review_count,
     published_at: doc.published_at,
     thumbnail_url: doc.thumbnail_url,
   };
@@ -151,7 +168,7 @@ export class SearchService {
   static async configureIndex(): Promise<void> {
     await this.ensureIndexExists();
     await this.index.updateSettings({
-      searchableAttributes: ['title', 'description', 'tags', 'author_name', 'category_name'],
+      searchableAttributes: ['title', 'description', 'excerpt', 'tags', 'author_name', 'category_name'],
       filterableAttributes: [
         'type',
         'status',
@@ -159,6 +176,7 @@ export class SearchService {
         'category_id',
         'license',
         'format',
+        'content_type',
         'tags',
         'author_name',
         'author_is_verified',
@@ -167,6 +185,8 @@ export class SearchService {
         'view_count',
         'download_count',
         'bookmark_count',
+        'avg_rating',
+        'review_count',
         'published_at',
         'created_at',
         'updated_at',

@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { ROUTES } from '@/lib/constants/routes';
 import { cn } from '@/lib/utils';
 
@@ -28,9 +28,7 @@ export function AuthCard({ title, description, children, className }: AuthCardPr
       <Card className={cn('w-full max-w-sm', className)}>
         <CardHeader className="items-center gap-2 text-center">
           <Link href={ROUTES.home} className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-            <span className="flex size-7 items-center justify-center rounded-md bg-brand text-brand-foreground">
-              <Sparkles className="size-4" aria-hidden="true" />
-            </span>
+            <BrandLogo size="md" />
             Bangla AI Hub
           </Link>
           <CardTitle className="font-heading text-2xl">{title}</CardTitle>

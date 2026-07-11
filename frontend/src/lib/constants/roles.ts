@@ -11,6 +11,13 @@ export const ROLE_OPTIONS = [
   'editor',
   'admin',
   'super_admin',
+  // Phase 5A-3 (Editorial Workflow) — parallel specializations, NOT more
+  // rungs in the cumulative ladder above (see backend/scripts/seed.ts's
+  // SPECIALIZATION_ROLES) — assignable alongside any ladder role via the
+  // same many-to-many UserRole table.
+  'writer',
+  'seo_editor',
+  'publisher',
 ] as const;
 
 export type RoleName = (typeof ROLE_OPTIONS)[number];
@@ -24,6 +31,9 @@ export const ROLE_LABELS: Record<RoleName, string> = {
   editor: 'Editor',
   admin: 'Admin',
   super_admin: 'Super Admin',
+  writer: 'Writer',
+  seo_editor: 'SEO Editor',
+  publisher: 'Publisher',
 };
 
 // Only super_admin can grant these two tiers, or change the roles of a user

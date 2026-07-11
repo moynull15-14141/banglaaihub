@@ -21,6 +21,7 @@
     "prisma:studio": "prisma studio",
     "db:seed": "tsx scripts/seed.ts",
     "search:sync": "tsx scripts/syncSearch.ts",
+    "search:sync:users": "tsx scripts/syncUserSearch.ts",
     "bootstrap:super-admin": "tsx scripts/promoteSuperAdmin.ts"
   },
   "keywords": [],

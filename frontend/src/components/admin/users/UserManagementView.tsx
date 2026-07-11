@@ -6,14 +6,16 @@ import { toast } from 'sonner';
 import { PageContainer } from '@/components/common/PageContainer';
 import { Pagination } from '@/components/common/Pagination';
 import { ConfirmActionDialog } from '@/components/admin/moderation/ConfirmActionDialog';
-import { UsersFilters } from '@/components/admin/users/UsersFilters';
+import { UsersFilters, type UsersScope } from '@/components/admin/users/UsersFilters';
 import { UsersTable } from '@/components/admin/users/UsersTable';
 import { UserRolesDialog } from '@/components/admin/users/UserRolesDialog';
 import {
   useAdminUsersList,
   useDeleteUser,
+  useUnverifyUser,
   useUpdateUserRoles,
   useUpdateUserStatus,
+  useVerifyUser,
 } from '@/lib/hooks/useAdmin';
 import type { AdminUser } from '@/types/admin';
 
@@ -54,6 +56,7 @@ export function UserManagementView() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const scope = (searchParams.get('scope') as UsersScope | null) ?? 'all';
   const status = (searchParams.get('status') as AdminUser['status'] | null) ?? undefined;
   const sort = searchParams.get('sort') ?? 'newest';
   const page = Number(searchParams.get('page') ?? '1') || 1;
@@ -81,12 +84,13 @@ export function UserManagementView() {
   const queryParams = useMemo(
     () => ({
       search: search.trim() || undefined,
+      scope,
       status,
       sort: sort as 'newest' | 'oldest',
       page,
       limit: PAGE_SIZE,
     }),
-    [search, status, sort, page],
+    [search, scope, status, sort, page],
   );
 
   const { data, isLoading, isError, refetch } = useAdminUsersList(queryParams);
@@ -98,6 +102,16 @@ export function UserManagementView() {
   const rolesMutation = useUpdateUserRoles();
   const statusMutation = useUpdateUserStatus();
   const deleteMutation = useDeleteUser();
+  const verifyMutation = useVerifyUser();
+  const unverifyMutation = useUnverifyUser();
+
+  function handleToggleVerified(user: AdminUser) {
+    const mutation = user.is_verified ? unverifyMutation : verifyMutation;
+    mutation.mutate(user.id, {
+      onSuccess: () => toast.success(user.is_verified ? 'User unverified.' : 'User verified.'),
+      onError: () => toast.error('Could not update verification status.'),
+    });
+  }
 
   return (
     <PageContainer>
@@ -106,6 +120,8 @@ export function UserManagementView() {
 
       <div className="mt-6 space-y-4">
         <UsersFilters
+          scope={scope}
+          onScopeChange={(value) => updateParams({ scope: value === 'all' ? undefined : value })}
           search={search}
           onSearchChange={setSearch}
           status={status}
@@ -122,6 +138,7 @@ export function UserManagementView() {
           onEditRoles={setRolesTarget}
           onChangeStatus={(user, nextStatus) => setStatusTarget({ user, status: nextStatus })}
           onDelete={setDeleteTarget}
+          onToggleVerified={handleToggleVerified}
         />
 
         {data ? (

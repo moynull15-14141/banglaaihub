@@ -1,10 +1,5 @@
-import { ComingSoonPage } from '@/components/common/ComingSoonPage';
+import { ReportsView } from '@/components/admin/reports/ReportsView';
 
 export default function AdminReportsPage() {
-  return (
-    <ComingSoonPage
-      title="Reports"
-      description="Community-reported content will be reviewed from here."
-    />
-  );
+  return <ReportsView />;
 }

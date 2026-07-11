@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import * as commentsController from '../controllers/comments.controller';
 import * as resourcesController from '../controllers/resources.controller';
+import * as reviewsController from '../controllers/reviews.controller';
 import { authenticate, authenticateOptional } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { createRateLimiter } from '../middleware/rateLimiter';
 import { resourceAttachmentUpload, resourceUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
+import { createCommentSchema, listCommentsQuerySchema } from '../validators/comment.validator';
 import {
   addResourceAttachmentQuerySchema,
   confirmDownloadQuerySchema,
@@ -20,6 +22,8 @@ import {
   updateResourceSchema,
   uploadResourceFileQuerySchema,
 } from '../validators/resource.validator';
+import { publishArticleSchema } from '../validators/article.validator';
+import { createReviewSchema, listReviewsQuerySchema } from '../validators/review.validator';
 
 // doc 13's rate-limiting table: 20/day/user for report filing.
 const reportLimiter = createRateLimiter({ windowMs: 24 * 60 * 60 * 1000, max: 20 });
@@ -72,6 +76,24 @@ resourcesRouter.post(
   resourcesController.confirmDownload,
 );
 resourcesRouter.post('/:slug/share', authenticateOptional, resourcesController.share);
+
+// Phase 5A-1 — Content Platform. Ownership vs. content:edit_any-equivalent
+// is resolved inside the service (assertCanModify, same pattern as PUT
+// /:slug) — content:publish only gates "can this actor publish an article
+// at all," not "this specific one."
+resourcesRouter.post(
+  '/:slug/publish',
+  authenticate,
+  authorize('content:publish'),
+  validate(publishArticleSchema),
+  resourcesController.publishArticle,
+);
+resourcesRouter.post(
+  '/:slug/archive',
+  authenticate,
+  authorize('content:publish'),
+  resourcesController.archiveArticle,
+);
 
 // Phase 3A.1 — Prompt Fork / Version History. Fork reuses the exact same
 // resource:create guard as POST / above (it calls ResourceService.create()
@@ -127,8 +149,44 @@ resourcesRouter.post(
   validate(createReportSchema),
   resourcesController.report,
 );
-resourcesRouter.get('/:slug/comments', commentsController.list);
-resourcesRouter.post('/:slug/comments', authenticate, commentsController.create);
+resourcesRouter.get(
+  '/:slug/comments',
+  authenticateOptional,
+  validate(listCommentsQuerySchema, 'query'),
+  commentsController.list,
+);
+resourcesRouter.post(
+  '/:slug/comments',
+  authenticate,
+  authorize('comment:create'),
+  validate(createCommentSchema),
+  commentsController.create,
+);
+
+// Phase 4A — reviews (one per resource per user, resource owner excluded).
+resourcesRouter.get(
+  '/:slug/reviews',
+  authenticateOptional,
+  validate(listReviewsQuerySchema, 'query'),
+  reviewsController.list,
+);
+resourcesRouter.get('/:slug/reviews/summary', reviewsController.getSummary);
+resourcesRouter.post(
+  '/:slug/reviews',
+  authenticate,
+  authorize('review:create'),
+  validate(createReviewSchema),
+  reviewsController.create,
+);
+
+// Phase 4A — resource likes (separate from bookmarks).
+resourcesRouter.post(
+  '/:slug/like',
+  authenticate,
+  authorize('like:create'),
+  resourcesController.likeResource,
+);
+resourcesRouter.delete('/:slug/like', authenticate, resourcesController.unlikeResource);
 
 // Mounted at /categories — doc 11's Categories API is a top-level prefix, not
 // nested under /resources, even though the handlers live alongside resources.

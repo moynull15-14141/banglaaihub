@@ -3,6 +3,7 @@ import type { NotificationType } from '../generated/prisma/client';
 import { ApiError } from '../utils/ApiError';
 import type { PaginationMeta, PaginationParams } from '../utils/pagination';
 import { buildPaginationMeta } from '../utils/pagination';
+import { categoryKeyForType } from '../utils/notificationCategories';
 
 function toNotificationDto(notification: {
   id: string;
@@ -36,6 +37,15 @@ export class NotificationService {
     message?: string | null;
     link?: string | null;
   }): Promise<void> {
+    const categoryKey = categoryKeyForType(input.type);
+    if (categoryKey) {
+      const user = await prisma.user.findUnique({
+        where: { id: input.userId },
+        select: { mutedNotificationCategories: true },
+      });
+      if (user?.mutedNotificationCategories.includes(categoryKey)) return;
+    }
+
     await prisma.notification.create({
       data: {
         userId: input.userId,

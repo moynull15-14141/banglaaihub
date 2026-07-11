@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { SlidersHorizontal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FilterSidebar } from '@/components/resource/FilterSidebar';
@@ -9,10 +10,13 @@ import { ResourceGrid, type ResourceGridView } from '@/components/resource/Resou
 import { SortDropdown } from '@/components/resource/SortDropdown';
 import { TrendingResourcesCard } from '@/components/resource/TrendingResourcesCard';
 import { ViewToggle } from '@/components/resource/ViewToggle';
+import { PeopleSearchResults } from '@/components/search/PeopleSearchResults';
 import { SearchBar } from '@/components/search/SearchBar';
 import { Pagination } from '@/components/common/Pagination';
 import { EmptyResults } from '@/components/resource/EmptyResults';
 import { Card } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useSearch, usePopularSearches } from '@/lib/hooks/useSearch';
 import { useResourceBrowseParams } from '@/lib/hooks/useResourceBrowseParams';
 import { useRecentSearches } from '@/lib/hooks/useRecentSearches';
@@ -25,6 +29,8 @@ const SORT_OPTIONS = [
 
 export function SearchView() {
   const [view, setView] = useState<ResourceGridView>('grid');
+  const [searchMode, setSearchMode] = useState<'resources' | 'people'>('resources');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const {
     page,
     sort,
@@ -72,6 +78,30 @@ export function SearchView() {
     addRecentSearch(value);
   }
 
+  const activeFilterCount = [type, category, language, license, author, verified, tags && tags.length > 0].filter(
+    Boolean,
+  ).length;
+
+  const filterSidebarProps = {
+    showTypeFilter: true,
+    type,
+    onTypeChange: (value: string | undefined) => updateParams({ type: value }),
+    category,
+    onCategoryChange: (value: string | undefined) => updateParams({ category: value }),
+    language,
+    onLanguageChange: (value: string | undefined) => updateParams({ language: value }),
+    license,
+    onLicenseChange: (value: string | undefined) => updateParams({ license: value }),
+    author,
+    onAuthorChange: (value: string | undefined) => updateParams({ author: value }),
+    verified,
+    onVerifiedChange: (value: boolean) => updateParams({ verified: value ? 'true' : undefined }),
+    tags,
+    onTagsChange: (value: string[] | undefined) =>
+      updateParams({ tags: value && value.length > 0 ? value.join(',') : undefined }),
+    onClear: clearFilters,
+  };
+
   return (
     <div className="space-y-6">
       <SearchBar
@@ -81,6 +111,15 @@ export function SearchView() {
         autoFocus
         showSuggestions
       />
+
+      {query.trim().length > 0 ? (
+        <Tabs value={searchMode} onValueChange={(value) => setSearchMode(value as 'resources' | 'people')}>
+          <TabsList>
+            <TabsTrigger value="resources">Resources</TabsTrigger>
+            <TabsTrigger value="people">People</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      ) : null}
 
       {query.trim().length === 0 ? (
         <div className="space-y-6">
@@ -128,30 +167,13 @@ export function SearchView() {
             </div>
           ) : null}
         </div>
+      ) : searchMode === 'people' ? (
+        <PeopleSearchResults query={query} />
       ) : (
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[240px_1fr]">
-          <div className="space-y-4">
+          <div className="hidden space-y-4 lg:block">
             <Card className="h-fit p-4">
-              <FilterSidebar
-                showTypeFilter
-                type={type}
-                onTypeChange={(value) => updateParams({ type: value })}
-                category={category}
-                onCategoryChange={(value) => updateParams({ category: value })}
-                language={language}
-                onLanguageChange={(value) => updateParams({ language: value })}
-                license={license}
-                onLicenseChange={(value) => updateParams({ license: value })}
-                author={author}
-                onAuthorChange={(value) => updateParams({ author: value })}
-                verified={verified}
-                onVerifiedChange={(value) => updateParams({ verified: value ? 'true' : undefined })}
-                tags={tags}
-                onTagsChange={(value) =>
-                  updateParams({ tags: value && value.length > 0 ? value.join(',') : undefined })
-                }
-                onClear={clearFilters}
-              />
+              <FilterSidebar {...filterSidebarProps} />
             </Card>
             <TrendingResourcesCard />
           </div>
@@ -161,6 +183,15 @@ export function SearchView() {
                 {data ? `${data.meta.total ?? 0} results for "${query}"` : null}
               </p>
               <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setFiltersOpen(true)}>
+                  <SlidersHorizontal className="size-4" aria-hidden="true" />
+                  Filters
+                  {activeFilterCount > 0 ? (
+                    <Badge variant="brand" className="h-4 min-w-4 px-1 text-[10px]">
+                      {activeFilterCount}
+                    </Badge>
+                  ) : null}
+                </Button>
                 <ViewToggle value={view} onChange={setView} />
                 <SortDropdown
                   options={SORT_OPTIONS}
@@ -185,6 +216,15 @@ export function SearchView() {
               />
             ) : null}
           </div>
+
+          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <SheetContent side="left" className="overflow-y-auto p-4">
+              <SheetHeader className="p-0">
+                <SheetTitle>Filters</SheetTitle>
+              </SheetHeader>
+              <FilterSidebar {...filterSidebarProps} showHeading={false} />
+            </SheetContent>
+          </Sheet>
         </div>
       )}
     </div>

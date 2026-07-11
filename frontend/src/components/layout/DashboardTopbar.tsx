@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { LogOut, Menu, Settings, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, LogOut, Menu, Settings, ShieldCheck, Sparkles, User as UserIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/user/UserAvatar';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 import { DashboardSidebarNav } from '@/components/layout/DashboardSidebarNav';
 import { canAccessAdminPanel } from '@/components/admin/adminNavLinks';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -38,12 +39,20 @@ export function DashboardTopbar() {
         </SheetTrigger>
         <SheetContent side="left" className="p-0">
           <SheetHeader className="flex-row items-center gap-2 border-b">
-            <span className="flex size-6 items-center justify-center rounded-md bg-brand text-brand-foreground">
-              <Sparkles className="size-3.5" aria-hidden="true" />
-            </span>
+            <BrandLogo size="sm" />
             <SheetTitle>Bangla AI Hub</SheetTitle>
           </SheetHeader>
           <DashboardSidebarNav onNavigate={() => setMobileOpen(false)} />
+          <SheetFooter className="border-t p-3">
+            <Link
+              href={ROUTES.home}
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
+              Back to site
+            </Link>
+          </SheetFooter>
         </SheetContent>
       </Sheet>
 

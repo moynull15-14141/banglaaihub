@@ -1,4 +1,5 @@
 import path from 'node:path';
+import DOMPurify from 'isomorphic-dompurify';
 import type { Prisma } from '../generated/prisma/client';
 import { prisma } from '../config/database';
 import { logger } from '../config/logger';
@@ -8,11 +9,16 @@ import type { PaginationMeta, PaginationParams } from '../utils/pagination';
 import { buildPaginationMeta } from '../utils/pagination';
 import { ensureUniqueSlug, slugify } from '../utils/slugify';
 import { writeAuditLog } from '../utils/auditLog';
+import { ActivityService } from './activity.service';
+import { ArticleRevisionService } from './articleRevision.service';
 import { AuthService } from './auth.service';
 import { EmailService } from './email.service';
 import { NotificationService } from './notification.service';
+import { PlatformSettingsService } from './platform-settings.service';
 import { ReputationService } from './reputation.service';
+import { computeTrendingScores } from './scoring/trending';
 import { SearchService } from './search.service';
+import { SeoService } from './seo.service';
 import { StorageService, type UploadedFile } from './storage.service';
 import type {
   CreateCategoryInput,
@@ -22,6 +28,7 @@ import type {
   UpdateCategoryInput,
   UpdateResourceInput,
 } from '../validators/resource.validator';
+import type { PublishArticleInput } from '../validators/article.validator';
 
 export const resourceInclude = {
   author: { select: { id: true, username: true, displayName: true, avatarUrl: true, isVerified: true } },
@@ -33,6 +40,7 @@ export const resourceInclude = {
   tool: true,
   model: true,
   prompt: true,
+  article: true,
   files: { orderBy: { sortOrder: 'asc' } },
 } satisfies Prisma.ResourceInclude;
 
@@ -73,12 +81,44 @@ function resourceLink(type: string, slug: string): string {
       return `/models/${slug}`;
     case 'prompt':
       return `/prompts/${slug}`;
+    case 'article':
+      return `/articles/${slug}`;
     default:
       return `/resources/${slug}`;
   }
 }
 
-export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation' | 'model';
+export type UploadKind =
+  | 'dataset'
+  | 'thumbnail'
+  | 'pdf'
+  | 'asset'
+  | 'documentation'
+  | 'model'
+  | 'article_image';
+
+// Article.body is Tiptap-generated HTML, rendered on public, unauthenticated
+// pages via dangerouslySetInnerHTML — sanitized on the way in (not just
+// trusted because it came from the rich-text editor) so a compromised
+// editor session, or a future non-Tiptap write path, can never persist a
+// stored-XSS payload. `isomorphic-dompurify` was already an installed-but-
+// unused backend dependency before this.
+function sanitizeArticleBody(body: string | null | undefined): string | null {
+  if (body === null || body === undefined) return null;
+  return DOMPurify.sanitize(body);
+}
+
+// ~200 wpm, the conventional estimate this genre of feature uses everywhere
+// (Medium, Ghost, etc.) — rounded up, floored at 1 minute for very short
+// drafts. `body` is Tiptap-generated HTML, so tags are stripped first —
+// otherwise markup itself would inflate the word count.
+function estimateReadingTimeMinutes(body: string | null | undefined): number | null {
+  if (!body) return null;
+  const text = body.replace(/<[^>]*>/g, ' ');
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  if (words === 0) return null;
+  return Math.max(1, Math.round(words / 200));
+}
 
 // thumbnail_url/documentation_url/paper.pdf_url can each be either a
 // user-pasted external URL or a previously-uploaded R2 key (see
@@ -114,16 +154,29 @@ async function toResourceFileDto(file: ResourceWithRelations['files'][number]): 
 // (resolved to a short-lived signed URL, exactly like avatars already do via
 // StorageService.resolveUrl) — the raw key itself is never returned.
 export async function toResourceDto(resource: ResourceWithRelations): Promise<Record<string, unknown>> {
-  const [thumbnailUrl, documentationUrl, datasetFileUrl, paperPdfUrl, toolFileUrl, modelFileUrl, attachments] =
-    await Promise.all([
-      StorageService.resolveUrl(resource.thumbnailUrl),
-      StorageService.resolveUrl(resource.documentationUrl),
-      resource.dataset ? StorageService.resolveUrl(resource.dataset.fileUrl) : null,
-      resource.paper ? StorageService.resolveUrl(resource.paper.pdfUrl) : null,
-      resource.tool ? StorageService.resolveUrl(resource.tool.fileUrl) : null,
-      resource.model ? StorageService.resolveUrl(resource.model.fileUrl) : null,
-      Promise.all(resource.files.map(toResourceFileDto)),
-    ]);
+  const [
+    thumbnailUrl,
+    documentationUrl,
+    datasetFileUrl,
+    paperPdfUrl,
+    toolFileUrl,
+    modelFileUrl,
+    articleFeaturedImageUrl,
+    articleSocialImageUrl,
+    attachments,
+    authorAvatarUrl,
+  ] = await Promise.all([
+    StorageService.resolveUrl(resource.thumbnailUrl),
+    StorageService.resolveUrl(resource.documentationUrl),
+    resource.dataset ? StorageService.resolveUrl(resource.dataset.fileUrl) : null,
+    resource.paper ? StorageService.resolveUrl(resource.paper.pdfUrl) : null,
+    resource.tool ? StorageService.resolveUrl(resource.tool.fileUrl) : null,
+    resource.model ? StorageService.resolveUrl(resource.model.fileUrl) : null,
+    resource.article ? StorageService.resolveUrl(resource.article.featuredImageUrl) : null,
+    resource.article ? StorageService.resolveUrl(resource.article.socialImageUrl) : null,
+    Promise.all(resource.files.map(toResourceFileDto)),
+    StorageService.resolveAvatarUrl(resource.author?.avatarUrl),
+  ]);
 
   return {
     id: resource.id,
@@ -145,7 +198,7 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
           id: resource.author.id,
           username: resource.author.username,
           display_name: resource.author.displayName,
-          avatar_url: resource.author.avatarUrl,
+          avatar_url: authorAvatarUrl,
           is_verified: resource.author.isVerified,
         }
       : null,
@@ -154,6 +207,9 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
     view_count: resource.viewCount,
     download_count: resource.downloadCount,
     bookmark_count: resource.bookmarkCount,
+    avg_rating: resource.avgRating,
+    review_count: resource.reviewCount,
+    like_count: resource.likeCount,
     featured: resource.featured,
     approved_by: resource.approver
       ? {
@@ -243,6 +299,28 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
           parent_id: resource.prompt.parentId,
         }
       : null,
+    article: resource.article
+      ? {
+          excerpt: resource.article.excerpt,
+          body: resource.article.body,
+          content_type: resource.article.contentType,
+          featured_image_url: articleFeaturedImageUrl,
+          social_image_url: articleSocialImageUrl,
+          seo_title: resource.article.seoTitle,
+          seo_description: resource.article.seoDescription,
+          canonical_url: resource.article.canonicalUrl,
+          focus_keyword: resource.article.focusKeyword,
+          meta_keywords: resource.article.metaKeywords,
+          featured_image_alt: resource.article.featuredImageAlt,
+          reading_time_minutes: resource.article.readingTimeMinutes,
+          scheduled_at: resource.article.scheduledAt,
+          pinned: resource.article.pinned,
+          editors_pick: resource.article.editorsPick,
+          allow_comments: resource.article.allowComments,
+          allow_reactions: resource.article.allowReactions,
+          allow_sharing: resource.article.allowSharing,
+        }
+      : null,
   };
 }
 
@@ -283,20 +361,10 @@ function resolveSort(sort?: string): Prisma.ResourceOrderByWithRelationInput {
   }
 }
 
-// Phase 3B — "trending" sort. Weighted score over ResourceAnalytics events
-// in a rolling 7-day window (download=3, bookmark=2, share=2, view=1),
-// computed in JS rather than raw SQL — consistent with the rest of this
-// codebase, which never drops to raw SQL anywhere. Fine at this platform's
-// scale: the candidate set is already narrowed by the same `where` clause
-// list() uses everywhere else before the analytics grouping happens.
-const TRENDING_WINDOW_DAYS = 7;
-const TRENDING_EVENT_WEIGHTS: Record<string, number> = {
-  download: 3,
-  bookmark: 2,
-  share: 2,
-  view: 1,
-};
-
+// Phase 3B — "trending" sort. Fine at this platform's scale: the candidate
+// set is already narrowed by the same `where` clause list() uses everywhere
+// else before the analytics grouping happens. Scoring itself lives in
+// scoring/trending.ts, shared with feed.service.ts.
 async function resolveTrendingPage(
   where: Prisma.ResourceWhereInput,
   pagination: PaginationParams,
@@ -305,20 +373,7 @@ async function resolveTrendingPage(
   const candidateIds = candidates.map((c) => c.id);
   if (candidateIds.length === 0) return { ids: [], total: 0 };
 
-  const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const grouped = await prisma.resourceAnalytics.groupBy({
-    by: ['resourceId', 'eventType'],
-    where: { resourceId: { in: candidateIds }, createdAt: { gte: since } },
-    _count: { _all: true },
-  });
-
-  const scores = new Map<string, number>();
-  for (const id of candidateIds) scores.set(id, 0);
-  for (const row of grouped) {
-    const weight = TRENDING_EVENT_WEIGHTS[row.eventType] ?? 0;
-    scores.set(row.resourceId, (scores.get(row.resourceId) ?? 0) + weight * row._count._all);
-  }
-
+  const scores = await computeTrendingScores(candidateIds);
   const ordered = candidateIds.sort((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
   const start = (pagination.page - 1) * pagination.limit;
   return { ids: ordered.slice(start, start + pagination.limit), total: ordered.length };
@@ -399,7 +454,10 @@ export class ResourceService {
 
   // Best-effort search sync: a MeiliSearch outage must never fail the primary
   // Postgres write it's triggered from, so failures are logged, not thrown.
-  private static async syncSearchIndex(resourceId: string): Promise<void> {
+  // Not private — Phase 4A's review/comment/like services call this directly
+  // after mutations that change a resource's rating/like aggregates, since
+  // those fields are part of the search index document.
+  static async syncSearchIndex(resourceId: string): Promise<void> {
     try {
       const resource = await this.getResourceWithRelations(resourceId);
       await SearchService.updateResource(resource);
@@ -449,12 +507,23 @@ export class ResourceService {
     if (query.category) where.category = { slug: query.category };
     if (query.featured) where.featured = true;
     if (query.license) where.license = query.license;
-    // Substring match on username — the MeiliSearch-backed /search endpoint
-    // does an exact match instead (see search.service.ts's search() comment
-    // for why); this Prisma-backed path can afford `contains` cheaply.
+    // Substring match on username OR display name — the MeiliSearch-backed
+    // /search endpoint does an exact match instead (see search.service.ts's
+    // search() comment for why); this Prisma-backed path can afford
+    // `contains` cheaply. Checking displayName too matters because it's the
+    // name shown everywhere in the UI (profile header, resource cards) —
+    // typing what's on screen ("Moynul Hasan") previously found nothing
+    // unless it happened to also be a substring of the username.
     if (query.author || query.verified) {
       where.author = {
-        ...(query.author ? { username: { contains: query.author, mode: 'insensitive' } } : {}),
+        ...(query.author
+          ? {
+              OR: [
+                { username: { contains: query.author, mode: 'insensitive' } },
+                { displayName: { contains: query.author, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
         ...(query.verified ? { isVerified: true } : {}),
       };
     }
@@ -555,6 +624,12 @@ export class ResourceService {
         select: { id: true },
       });
       dto.is_bookmarked = bookmark !== null;
+
+      const like = await prisma.resourceLike.findUnique({
+        where: { userId_resourceId: { userId: requester.userId, resourceId: resource.id } },
+        select: { id: true },
+      });
+      dto.is_liked = like !== null;
     }
 
     return dto;
@@ -695,7 +770,20 @@ export class ResourceService {
     authorId: string,
     input: CreateResourceInput,
   ): Promise<{ id: string; slug: string; status: string; message: string }> {
-    const baseSlug = slugify(input.title);
+    // Article authoring is an editorial-staff capability, distinct from the
+    // general resource:create a contributor already has — checked here
+    // rather than at the route layer, since POST /resources is otherwise
+    // type-agnostic (see resources.routes.ts).
+    if (input.type === 'article') {
+      const permissions = await AuthService.getUserPermissions(authorId);
+      if (!permissions.has('content:create')) {
+        throw new ApiError(403, 'FORBIDDEN', 'You do not have permission to create articles.');
+      }
+    }
+
+    // Article-only permalink override (Phase 5A-2) — every other resource
+    // type keeps deriving its slug from the title only, exactly as before.
+    const baseSlug = slugify(input.type === 'article' && input.slug ? input.slug : input.title);
     const slug = await ensureUniqueSlug(baseSlug, async (candidate) => {
       const existing = await prisma.resource.findUnique({ where: { slug: candidate } });
       return existing !== null;
@@ -714,7 +802,10 @@ export class ResourceService {
           license: input.license ?? null,
           externalUrl: input.external_url ?? null,
           thumbnailUrl: input.thumbnail_url ?? null,
-          status: 'pending',
+          // Articles start as drafts, outside the community-moderation
+          // pending->approved/rejected flow — publishing is a separate,
+          // explicit action (see publishArticle() below), not a review queue.
+          status: input.type === 'article' ? 'draft' : 'pending',
         },
       });
 
@@ -843,6 +934,46 @@ export class ResourceService {
         });
       }
 
+      if (input.type === 'article') {
+        await tx.article.create({
+          data: {
+            resourceId: resource.id,
+            excerpt: input.article?.excerpt ?? null,
+            body: sanitizeArticleBody(input.article?.body),
+            contentType: input.article?.content_type ?? 'article',
+            featuredImageUrl: input.article?.featured_image_url ?? null,
+            socialImageUrl: input.article?.social_image_url ?? null,
+            seoTitle: input.article?.seo_title ?? null,
+            seoDescription: input.article?.seo_description ?? null,
+            canonicalUrl: input.article?.canonical_url ?? null,
+            focusKeyword: input.article?.focus_keyword ?? null,
+            metaKeywords: input.article?.meta_keywords ?? null,
+            featuredImageAlt: input.article?.featured_image_alt ?? null,
+            readingTimeMinutes: estimateReadingTimeMinutes(input.article?.body),
+            allowComments: input.article?.allow_comments ?? true,
+            allowReactions: input.article?.allow_reactions ?? true,
+            allowSharing: input.article?.allow_sharing ?? true,
+          },
+        });
+
+        // Phase 5A-3 — version 1, created alongside the article itself.
+        await ArticleRevisionService.snapshot(
+          tx,
+          resource.id,
+          authorId,
+          {
+            title: resource.title,
+            body: sanitizeArticleBody(input.article?.body) ?? null,
+            excerpt: input.article?.excerpt ?? null,
+            categoryId: resource.categoryId,
+            focusKeyword: input.article?.focus_keyword ?? null,
+            seoTitle: input.article?.seo_title ?? null,
+            seoDescription: input.article?.seo_description ?? null,
+          },
+          'Initial draft',
+        );
+      }
+
       if (input.tags && input.tags.length > 0) {
         await linkTags(tx, resource.id, input.tags);
       }
@@ -858,6 +989,45 @@ export class ResourceService {
       newValue: { slug: created.slug, type: created.type },
     });
 
+    await ActivityService.record({
+      userId: authorId,
+      type: created.type === 'model' ? 'model_uploaded' : 'resource_uploaded',
+      targetType: 'resource',
+      targetId: created.id,
+      metadata: { slug: created.slug, resourceType: created.type },
+    });
+
+    // Articles are drafts by design (see status above) — they're published
+    // via the separate publishArticle() flow, never through the community
+    // "require manual approval" toggle, which only governs submitted
+    // resources.
+    if (created.type === 'article') {
+      return {
+        id: created.id,
+        slug: created.slug,
+        status: created.status,
+        message: 'Draft saved.',
+      };
+    }
+
+    // Pending Review's "Require manual approval" toggle (off by admin choice)
+    // — skip the moderation queue entirely and publish immediately, with the
+    // exact same side effects a human approval would have (reputation award,
+    // approved notification/email, search indexing). No automated
+    // content-quality check exists yet; today "off" means every submission
+    // auto-publishes unconditionally — a check step is planned to gate this
+    // later without changing the toggle's contract.
+    const requireManualApproval = await PlatformSettingsService.getRequireManualApproval();
+    if (!requireManualApproval) {
+      await this.autoApprove(created);
+      return {
+        id: created.id,
+        slug: created.slug,
+        status: 'approved',
+        message: 'Your submission has been published automatically.',
+      };
+    }
+
     void this.syncSearchIndex(created.id);
 
     return {
@@ -868,12 +1038,66 @@ export class ResourceService {
     };
   }
 
+  // Same effects as approve() (status/points/notification/search sync) but
+  // with no human approver — used only by create()'s auto-approve path.
+  // Kept separate from approve() rather than passing approverId: null
+  // through it, since approve()'s audit action/permission checks are
+  // written assuming a real moderator actor.
+  private static async autoApprove(resource: {
+    id: string;
+    slug: string;
+    title: string;
+    type: string;
+    authorId: string | null;
+  }): Promise<void> {
+    await prisma.resource.update({
+      where: { id: resource.id },
+      data: {
+        status: 'approved',
+        approvedAt: new Date(),
+        publishedAt: new Date(),
+      },
+    });
+
+    await writeAuditLog({
+      actorId: null,
+      action: 'resource.auto_approve',
+      targetType: 'resource',
+      targetId: resource.id,
+      newValue: { status: 'approved' },
+    });
+
+    if (resource.authorId) {
+      const points = RESOURCE_APPROVAL_POINTS[resource.type];
+      if (points) {
+        await ReputationService.award({
+          userId: resource.authorId,
+          eventType: `${resource.type}_approved`,
+          points,
+          resourceId: resource.id,
+          description: `"${resource.title}" was approved`,
+        });
+      }
+      await ActivityService.record({
+        userId: resource.authorId,
+        type: 'resource_approved',
+        targetType: 'resource',
+        targetId: resource.id,
+        metadata: { slug: resource.slug, resourceType: resource.type },
+      });
+    }
+
+    await this.notifySubmissionDecision(resource, 'approved');
+
+    void this.syncSearchIndex(resource.id);
+  }
+
   static async update(
     slug: string,
     requester: AccessTokenPayload,
     input: UpdateResourceInput,
   ): Promise<unknown> {
-    const resource = await prisma.resource.findUnique({ where: { slug } });
+    const resource = await prisma.resource.findUnique({ where: { slug }, include: { article: true } });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
     }
@@ -884,8 +1108,12 @@ export class ResourceService {
     // when the AUTHOR themselves makes the edit. A moderator/editor fixing
     // someone else's resource via resource:edit_any is a moderation action,
     // not a resubmission, and shouldn't force a re-review of their own change.
+    // Articles are excluded entirely — a published article being edited by
+    // its author stays published; there is no community moderation queue for
+    // editorial content (see publishArticle() for how article status
+    // actually transitions).
     const isOwnEdit = resource.authorId === requester.userId;
-    const resubmitting = isOwnEdit && resource.status === 'approved';
+    const resubmitting = isOwnEdit && resource.status === 'approved' && resource.type !== 'article';
 
     const oldValue = {
       title: resource.title,
@@ -893,6 +1121,21 @@ export class ResourceService {
       categoryId: resource.categoryId,
       status: resource.status,
     };
+
+    // Article-only permalink change (Phase 5A-2) — every other resource type
+    // never re-slugs on update, exactly as before. Old links to the previous
+    // slug simply 404 (no redirect-manager exists yet — out of scope this
+    // phase, see the SEO panel's own warning about changing a live permalink).
+    let newSlug: string | undefined;
+    if (resource.type === 'article' && input.slug) {
+      const candidateBase = slugify(input.slug);
+      if (candidateBase !== resource.slug) {
+        newSlug = await ensureUniqueSlug(candidateBase, async (candidate) => {
+          const existing = await prisma.resource.findUnique({ where: { slug: candidate }, select: { id: true } });
+          return existing !== null && existing.id !== resource.id;
+        });
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.resource.update({
@@ -906,6 +1149,7 @@ export class ResourceService {
           externalUrl: input.external_url,
           thumbnailUrl: input.thumbnail_url,
           visibility: input.visibility,
+          ...(newSlug ? { slug: newSlug } : {}),
           ...(resubmitting ? { status: 'pending' as const, approvedBy: null, approvedAt: null } : {}),
         },
       });
@@ -993,6 +1237,52 @@ export class ResourceService {
         });
       }
 
+      if (input.article && resource.type === 'article') {
+        await tx.article.update({
+          where: { resourceId: resource.id },
+          data: {
+            excerpt: input.article.excerpt,
+            body: input.article.body !== undefined ? sanitizeArticleBody(input.article.body) : undefined,
+            contentType: input.article.content_type,
+            featuredImageUrl: input.article.featured_image_url,
+            socialImageUrl: input.article.social_image_url,
+            seoTitle: input.article.seo_title,
+            seoDescription: input.article.seo_description,
+            canonicalUrl: input.article.canonical_url,
+            focusKeyword: input.article.focus_keyword,
+            metaKeywords: input.article.meta_keywords,
+            featuredImageAlt: input.article.featured_image_alt,
+            allowComments: input.article.allow_comments,
+            allowReactions: input.article.allow_reactions,
+            allowSharing: input.article.allow_sharing,
+            ...(input.article.body !== undefined
+              ? { readingTimeMinutes: estimateReadingTimeMinutes(input.article.body) }
+              : {}),
+          },
+        });
+      }
+
+      // Phase 5A-3 — every save creates a revision snapshot (the resulting
+      // merged state, not just the diff), appended inside this same
+      // transaction — never a separate transaction boundary.
+      if (resource.type === 'article') {
+        await ArticleRevisionService.snapshot(
+          tx,
+          resource.id,
+          requester.userId,
+          {
+            title: input.title ?? resource.title,
+            body: input.article?.body !== undefined ? sanitizeArticleBody(input.article.body) : (resource.article?.body ?? null),
+            excerpt: input.article?.excerpt ?? resource.article?.excerpt ?? null,
+            categoryId: input.category_id ?? resource.categoryId,
+            focusKeyword: input.article?.focus_keyword ?? resource.article?.focusKeyword ?? null,
+            seoTitle: input.article?.seo_title ?? resource.article?.seoTitle ?? null,
+            seoDescription: input.article?.seo_description ?? resource.article?.seoDescription ?? null,
+          },
+          input.article?.revision_summary,
+        );
+      }
+
       if (input.tags) {
         await tx.resourceTag.deleteMany({ where: { resourceId: resource.id } });
         await linkTags(tx, resource.id, input.tags);
@@ -1073,6 +1363,14 @@ export class ResourceService {
       targetType: 'resource',
       targetId: created.id,
       newValue: { forkedFrom: resource.id, slug: created.slug },
+    });
+
+    await ActivityService.record({
+      userId: requester.userId,
+      type: 'prompt_forked',
+      targetType: 'resource',
+      targetId: created.id,
+      metadata: { forkedFrom: resource.id, forkedFromSlug: resource.slug },
     });
 
     return { ...created, message: 'Prompt forked successfully.' };
@@ -1221,7 +1519,7 @@ export class ResourceService {
   ): Promise<void> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true, paper: true, tool: true, model: true, files: true },
+      include: { dataset: true, paper: true, tool: true, model: true, article: true, files: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
@@ -1235,8 +1533,12 @@ export class ResourceService {
       throw new ApiError(403, 'FORBIDDEN', 'You do not have permission to delete this resource.');
     }
 
+    // Draft/scheduled articles were never publicly visible — same reasoning
+    // as pending/rejected community submissions — so they hard-delete too.
     const hardDelete =
-      options.force === true ? canDeleteAny : resource.status === 'pending' || resource.status === 'rejected';
+      options.force === true
+        ? canDeleteAny
+        : resource.status === 'pending' || resource.status === 'rejected' || resource.status === 'draft' || resource.status === 'scheduled';
 
     if (hardDelete) {
       const keys: (string | null)[] = [
@@ -1246,6 +1548,8 @@ export class ResourceService {
         objectKeyOrNull(resource.paper?.pdfUrl ?? null),
         resource.tool?.fileUrl ?? null,
         resource.model?.fileUrl ?? null,
+        objectKeyOrNull(resource.article?.featuredImageUrl ?? null),
+        objectKeyOrNull(resource.article?.socialImageUrl ?? null),
         ...resource.files.map((file) => file.storageKey),
       ];
 
@@ -1291,6 +1595,109 @@ export class ResourceService {
     void this.syncSearchIndex(resource.id);
   }
 
+  // POST /resources/:slug/publish — the article-specific counterpart to
+  // approve()/reject() above. Deliberately NOT sharing their side-effect tail
+  // (reputation award, submission-decision email): those are about a
+  // community member's submission being reviewed by someone else, whereas
+  // publishing an article is editorial staff putting out their own content —
+  // a different action with no submission to decide on.
+  static async publishArticle(
+    slug: string,
+    requester: AccessTokenPayload,
+    input: PublishArticleInput,
+  ): Promise<unknown> {
+    const resource = await prisma.resource.findUnique({ where: { slug }, include: { article: true } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+    if (resource.type !== 'article' || !resource.article) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Only articles can be published through this endpoint.');
+    }
+    await assertCanModify(resource, requester, 'edit');
+
+    // Phase 5A-3 — Publish Checklist gate. Requesting `override` is a
+    // deliberate, explicit opt-in — it does NOT get silently granted just
+    // because the actor happens to hold an admin-tier permission (that
+    // would mean the checklist never actually applies to admins at all,
+    // defeating the point of "show warnings, allow admin override" as an
+    // opt-in escape hatch rather than a blanket exemption). If override is
+    // requested, the actor must actually be admin-tier; if it isn't
+    // requested, the checklist applies to everyone, admins included.
+    if (input.override) {
+      const permissions = await AuthService.getUserPermissions(requester.userId);
+      // content:delete is admin-tier-and-up (see seed.ts) — the closest
+      // existing permission to "admin override," rather than introducing
+      // a brand-new permission for one checkbox.
+      if (!permissions.has('content:delete')) {
+        throw new ApiError(403, 'FORBIDDEN', 'Only admins can override the publish checklist.');
+      }
+    } else {
+      const readiness = SeoService.checkPublishReadiness({ resource, ...resource.article });
+      if (!readiness.passed) {
+        throw new ApiError(400, 'PUBLISH_CHECKLIST_FAILED', readiness.failures.join(' '));
+      }
+    }
+
+    const scheduledAt = input.scheduled_at ? new Date(input.scheduled_at) : null;
+    const isFutureSchedule = scheduledAt !== null && scheduledAt.getTime() > Date.now();
+
+    await prisma.$transaction([
+      prisma.resource.update({
+        where: { id: resource.id },
+        data: isFutureSchedule
+          ? { status: 'scheduled' }
+          : { status: 'approved', approvedBy: requester.userId, approvedAt: new Date(), publishedAt: new Date() },
+      }),
+      prisma.article.update({
+        where: { resourceId: resource.id },
+        data: { scheduledAt: isFutureSchedule ? scheduledAt : null },
+      }),
+    ]);
+
+    await writeAuditLog({
+      actorId: requester.userId,
+      action: isFutureSchedule ? 'article.schedule' : 'article.publish',
+      targetType: 'resource',
+      targetId: resource.id,
+      oldValue: { status: resource.status },
+      newValue: isFutureSchedule ? { status: 'scheduled', scheduledAt } : { status: 'approved' },
+    });
+
+    void this.syncSearchIndex(resource.id);
+
+    return toResourceDto(await this.getResourceWithRelations(resource.id));
+  }
+
+  // PATCH-style archive — pulls a previously-published (or draft) article out
+  // of public view without deleting it. Distinct from deleteResource(): the
+  // row and its files/tags/attachments all stay intact, just unreachable via
+  // list()/feed/search (all of which filter on status).
+  static async archiveArticle(slug: string, requester: AccessTokenPayload): Promise<unknown> {
+    const resource = await prisma.resource.findUnique({ where: { slug } });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+    if (resource.type !== 'article') {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Only articles can be archived through this endpoint.');
+    }
+    await assertCanModify(resource, requester, 'edit');
+
+    await prisma.resource.update({ where: { id: resource.id }, data: { status: 'archived' } });
+
+    await writeAuditLog({
+      actorId: requester.userId,
+      action: 'article.archive',
+      targetType: 'resource',
+      targetId: resource.id,
+      oldValue: { status: resource.status },
+      newValue: { status: 'archived' },
+    });
+
+    void this.syncSearchIndex(resource.id);
+
+    return toResourceDto(await this.getResourceWithRelations(resource.id));
+  }
+
   static async approve(resourceId: string, approverId: string): Promise<unknown> {
     const resource = await prisma.resource.findUnique({ where: { id: resourceId } });
     if (!resource || resource.deletedAt) {
@@ -1327,6 +1734,13 @@ export class ResourceService {
           description: `"${resource.title}" was approved`,
         });
       }
+      await ActivityService.record({
+        userId: resource.authorId,
+        type: 'resource_approved',
+        targetType: 'resource',
+        targetId: resource.id,
+        metadata: { slug: resource.slug, resourceType: resource.type },
+      });
     }
 
     await this.notifySubmissionDecision(resource, 'approved');
@@ -1464,7 +1878,7 @@ export class ResourceService {
   ): Promise<{ file_url: string }> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
-      include: { dataset: true, paper: true, tool: true, model: true },
+      include: { dataset: true, paper: true, tool: true, model: true, article: true },
     });
     if (!resource || resource.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
@@ -1543,6 +1957,17 @@ export class ResourceService {
         const uploaded = await StorageService.uploadDocumentation(resource.id, file);
         key = uploaded.key;
         await prisma.resource.update({ where: { id: resource.id }, data: { documentationUrl: key } });
+        await StorageService.deleteObject(previousKey).catch(() => {});
+        break;
+      }
+      case 'article_image': {
+        if (resource.type !== 'article' || !resource.article) {
+          throw new ApiError(400, 'VALIDATION_ERROR', 'Only article resources support featured image uploads.');
+        }
+        const previousKey = objectKeyOrNull(resource.article.featuredImageUrl);
+        const uploaded = await StorageService.uploadArticleFeaturedImage(resource.id, file);
+        key = uploaded.key;
+        await prisma.article.update({ where: { resourceId: resource.id }, data: { featuredImageUrl: key } });
         await StorageService.deleteObject(previousKey).catch(() => {});
         break;
       }

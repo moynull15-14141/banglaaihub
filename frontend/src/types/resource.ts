@@ -6,10 +6,43 @@ export type ResourceType =
   | 'prompt'
   | 'project'
   | 'news'
-  | 'model';
+  | 'model'
+  | 'article';
 
 export type ResourceLanguage = 'bn' | 'en' | 'both';
-export type ResourceStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
+// `draft`/`scheduled`/`archived` are Phase 5A-1 additions used only by the
+// `article` ResourceType's editorial workflow.
+export type ResourceStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'flagged'
+  | 'draft'
+  | 'scheduled'
+  | 'archived'
+  // Phase 5A-3 (Editorial Workflow) — article-only pre-publish states.
+  // `ready_to_publish` is the brief's "Approved" (editorially signed off,
+  // awaiting publish/schedule) — deliberately distinct from `approved`
+  // above, which means "live/published" for every resource type.
+  | 'idea'
+  | 'in_review'
+  | 'seo_review'
+  | 'needs_changes'
+  | 'ready_to_publish';
+
+// Mirrors backend/prisma/schema.prisma's ArticleContentType enum.
+export type ArticleContentType =
+  | 'article'
+  | 'tutorial'
+  | 'guide'
+  | 'news'
+  | 'announcement'
+  | 'editorial'
+  | 'interview'
+  | 'release_notes'
+  | 'opinion'
+  | 'case_study'
+  | 'community_update';
 export type ResourceVisibility = 'public' | 'unlisted' | 'private';
 export type ResourceSort =
   | 'newest'
@@ -148,6 +181,29 @@ export interface PromptMetadata {
   parent_id: string | null;
 }
 
+// Mirrors backend/src/services/resources.service.ts's toResourceDto() article block.
+export interface ArticleMetadata {
+  excerpt: string | null;
+  body: string | null;
+  content_type: ArticleContentType;
+  featured_image_url: string | null;
+  social_image_url: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  canonical_url: string | null;
+  // Phase 5A-2 (SEO Engine).
+  focus_keyword: string | null;
+  meta_keywords: string | null;
+  featured_image_alt: string | null;
+  reading_time_minutes: number | null;
+  scheduled_at: string | null;
+  pinned: boolean;
+  editors_pick: boolean;
+  allow_comments: boolean;
+  allow_reactions: boolean;
+  allow_sharing: boolean;
+}
+
 export interface Resource {
   id: string;
   slug: string;
@@ -169,6 +225,10 @@ export interface Resource {
   view_count: number;
   download_count: number;
   bookmark_count: number;
+  // Phase 4A — Community Foundation.
+  avg_rating: number | null;
+  review_count: number;
+  like_count: number;
   featured: boolean;
   approved_by: ResourceApprover | null;
   approved_at: string | null;
@@ -182,6 +242,7 @@ export interface Resource {
   // authenticated requester) or GET /users/me/bookmarks (always true there)
   // — omitted (undefined) from plain listing endpoints, not computed there.
   is_bookmarked?: boolean;
+  is_liked?: boolean;
   // Only present on GET /users/me/bookmarks — when the bookmark itself was
   // created, not the resource.
   bookmarked_at?: string;
@@ -190,6 +251,7 @@ export interface Resource {
   tool: ToolMetadata | null;
   model: ModelMetadata | null;
   prompt: PromptMetadata | null;
+  article: ArticleMetadata | null;
 }
 
 // Mirrors backend/src/validators/dataset.validator.ts's datasetInputSchema —
@@ -260,11 +322,35 @@ export interface PromptInput {
   parent_prompt_slug?: string;
 }
 
+// Mirrors backend/src/validators/article.validator.ts's articleInputSchema.
+export interface ArticleInput {
+  excerpt?: string;
+  body?: string;
+  content_type?: ArticleContentType;
+  featured_image_url?: string;
+  social_image_url?: string;
+  seo_title?: string;
+  seo_description?: string;
+  canonical_url?: string;
+  focus_keyword?: string;
+  meta_keywords?: string;
+  featured_image_alt?: string;
+  allow_comments?: boolean;
+  allow_reactions?: boolean;
+  allow_sharing?: boolean;
+  // Phase 5A-3 (Editorial Workflow) — stored on the resulting ArticleRevision,
+  // never on Article itself.
+  revision_summary?: string;
+}
+
 // Mirrors backend/src/validators/resource.validator.ts's createResourceSchema.
 export interface CreateResourceInput {
   title: string;
   description?: string;
   type: ResourceType;
+  // Article-only permalink override (Phase 5A-2) — ignored server-side for
+  // every other resource type.
+  slug?: string;
   category_id?: number;
   tags?: string[];
   language?: ResourceLanguage;
@@ -277,6 +363,7 @@ export interface CreateResourceInput {
   tool?: ToolInput;
   model?: ModelInput;
   prompt?: PromptInput;
+  article?: ArticleInput;
 }
 
 // Mirrors backend/src/validators/resource.validator.ts's updateResourceSchema
@@ -285,7 +372,22 @@ export interface CreateResourceInput {
 export type UpdateResourceInput = Partial<CreateResourceInput>;
 
 // Mirrors backend/src/services/resources.service.ts's UploadKind.
-export type UploadKind = 'dataset' | 'thumbnail' | 'pdf' | 'asset' | 'documentation' | 'model';
+export type UploadKind =
+  | 'dataset'
+  | 'thumbnail'
+  | 'pdf'
+  | 'asset'
+  | 'documentation'
+  | 'model'
+  | 'article_image';
+
+// Mirrors backend/src/validators/article.validator.ts's publishArticleSchema.
+export interface PublishArticleInput {
+  scheduled_at?: string;
+  // Phase 5A-3 — bypasses the Publish Checklist gate; only honored
+  // server-side for admin-tier actors regardless of what's sent here.
+  override?: boolean;
+}
 
 export interface CreateResourceResult {
   id: string;

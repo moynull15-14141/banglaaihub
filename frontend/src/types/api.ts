@@ -4,6 +4,8 @@ export interface ResponseMeta {
   limit?: number;
   hasNextPage?: boolean;
   unread_count?: number;
+  next_cursor?: string | null;
+  mode?: string;
 }
 
 export interface ApiSuccessResponse<T> {

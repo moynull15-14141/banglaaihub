@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ConfirmActionDialog } from '@/components/admin/moderation/ConfirmActionDialog';
 import { ResourceMeta } from '@/components/resource/ResourceMeta';
 import { TagBadge } from '@/components/resource/TagBadge';
+import { PinResourceButton } from '@/components/user/PinResourceButton';
 import { UserAvatar } from '@/components/user/UserAvatar';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
 import { RESOURCE_TYPE_LABELS, STATUS_BADGE_VARIANT, STATUS_LABEL } from '@/lib/constants/resourceTypes';
@@ -89,9 +90,9 @@ export function ResourceCard({
   }
 
   return (
-    <Card className="flex h-full flex-col overflow-hidden py-0">
+    <Card className="flex h-full flex-col gap-3 overflow-hidden py-0 sm:gap-4">
       <Link href={href} className="block overflow-hidden">
-        <div className="flex h-32 items-center justify-center overflow-hidden bg-muted">
+        <div className="flex h-24 items-center justify-center overflow-hidden bg-muted sm:h-32">
           {resource.thumbnail_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- arbitrary user-supplied external URL, no fixed domain to allowlist for next/image
             <img
@@ -105,7 +106,7 @@ export function ResourceCard({
           )}
         </div>
       </Link>
-      <CardHeader className="pt-4">
+      <CardHeader className="gap-1 pt-3 sm:pt-4">
         <div className="flex items-center gap-2">
           <Badge variant="brand">{RESOURCE_TYPE_LABELS[resource.type] ?? resource.type}</Badge>
           {showStatus && status ? (
@@ -128,9 +129,9 @@ export function ResourceCard({
           </h3>
         </Link>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-3">
+      <CardContent className="flex flex-1 flex-col gap-2 sm:gap-3">
         {resource.description ? (
-          <p className="text-sm text-muted-foreground">{truncate(resource.description, 140)}</p>
+          <p className="line-clamp-2 text-sm text-muted-foreground">{truncate(resource.description, 140)}</p>
         ) : null}
         {resource.tags.length > 0 || attachments.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -147,7 +148,7 @@ export function ResourceCard({
             ) : null}
           </div>
         ) : null}
-        <div className="mt-auto flex flex-col gap-3 pt-2">
+        <div className="mt-auto flex flex-col gap-2 pt-1 sm:gap-3 sm:pt-2">
           {author && authorName ? (
             <Link
               href={ROUTES.userProfile(author.username)}
@@ -162,6 +163,8 @@ export function ResourceCard({
             downloadCount={resource.download_count}
             bookmarkCount={resource.bookmark_count}
             publishedAt={resource.published_at}
+            avgRating={resource.avg_rating}
+            reviewCount={resource.review_count}
           />
           {showOwnerActions ? (
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
@@ -175,6 +178,7 @@ export function ResourceCard({
                 {updatedAt ? <span>Updated {formatDate(updatedAt)}</span> : null}
               </div>
               <div className="flex items-center gap-1">
+                <PinResourceButton resourceId={resource.id} />
                 <Button asChild variant="ghost" size="icon-sm" aria-label="Edit">
                   <Link href={ROUTES.editResource(resource.slug)}>
                     <Pencil className="size-4" aria-hidden="true" />

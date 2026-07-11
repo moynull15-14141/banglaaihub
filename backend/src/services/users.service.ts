@@ -4,9 +4,14 @@ import { ApiError } from '../utils/ApiError';
 import type { PaginationMeta, PaginationParams } from '../utils/pagination';
 import { buildPaginationMeta } from '../utils/pagination';
 import { writeAuditLog } from '../utils/auditLog';
+import { resolveContributorLevel } from '../utils/contributorLevel';
+import { assertProfileViewable } from '../utils/profileVisibility';
+import type { NotificationCategoryKey } from '../utils/notificationCategories';
 import { getUserRoleNames } from './auth.service';
+import { BadgeService } from './badge.service';
 import { resourceInclude, toResourceDto } from './resources.service';
 import { StorageService, type UploadedFile } from './storage.service';
+import { UserSearchService } from './user-search.service';
 import type { UpdateProfileInput } from '../validators/user.validator';
 import type {
   ListUsersQuery,
@@ -15,6 +20,19 @@ import type {
 } from '../validators/admin.validator';
 
 const PUBLIC_PROFILE_RESOURCE_LIMIT = 10;
+// Fields counted toward "profile completion" on the dashboard — a simple
+// filled/total ratio, no weighting.
+const PROFILE_COMPLETION_FIELDS = [
+  'displayName',
+  'bio',
+  'headline',
+  'avatarUrl',
+  'coverImage',
+  'institution',
+  'location',
+  'websiteUrl',
+  'githubUrl',
+] as const;
 
 // Privilege-escalation guard for updateUserRoles: only a super_admin can
 // grant admin/super_admin, or touch the roles of someone who already holds
@@ -23,6 +41,15 @@ const PUBLIC_PROFILE_RESOURCE_LIMIT = 10;
 const TOP_TIER_ROLES = ['admin', 'super_admin'];
 const includesTopTierRole = (roleNames: string[]): boolean =>
   roleNames.some((name) => TOP_TIER_ROLES.includes(name));
+
+// The Users page's "Staff" scope (see listUsersAdmin) — every role that
+// grants some admin-panel page (mirrors frontend/src/components/admin/
+// adminNavLinks.ts's ADMIN_NAV_LINKS, plus `moderator`, which carries
+// moderation permissions per seed.ts's matrix even though no nav link
+// gates on it yet). Deliberately excludes contributor/verified_contributor
+// — those are a content-trust tier every regular member can earn, not
+// website-management access.
+const STAFF_ROLES = ['moderator', 'editor', 'admin', 'super_admin'];
 
 // Maps the four author-facing filter words back onto doc 10's actual
 // ResourceStatus enum (pending | approved | rejected | flagged) — "draft" has
@@ -35,10 +62,14 @@ const SUBMISSION_STATUS_MAP: Record<string, 'pending' | 'approved' | 'rejected'>
   rejected: 'rejected',
 };
 
-async function resolveAvatarUrl(key: string | null): Promise<string | null> {
+function resolveAvatarUrl(key: string | null): Promise<string | null> {
+  return StorageService.resolveAvatarUrl(key);
+}
+
+async function resolveCoverImageUrl(key: string | null): Promise<string | null> {
   if (!key) return null;
   if (/^https?:\/\//i.test(key)) return key;
-  return StorageService.getSignedAvatarUrl(key);
+  return StorageService.getSignedCoverUrl(key);
 }
 
 // Admin-facing user shape — an explicit allowlist, same discipline as the
@@ -103,7 +134,19 @@ function toAdminUserDto(
 }
 
 export class UserService {
-  static async getPublicProfile(username: string): Promise<Record<string, unknown>> {
+  static async resolveIdByUsername(username: string): Promise<string> {
+    const user = await prisma.user.findUnique({ where: { username }, select: { id: true, deletedAt: true } });
+    if (!user || user.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
+    }
+    return user.id;
+  }
+
+  static async getPublicProfile(
+    username: string,
+    viewerId: string | null = null,
+    viewerIsAdmin = false,
+  ): Promise<Record<string, unknown>> {
     const user = await prisma.user.findUnique({
       where: { username },
       include: {
@@ -119,32 +162,67 @@ export class UserService {
     if (!user || user.deletedAt) {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
     }
+    await assertProfileViewable(user, viewerId, viewerIsAdmin);
 
-    const stats = await prisma.resource.aggregate({
-      where: { authorId: user.id, status: 'approved', deletedAt: null },
-      _count: { _all: true },
-      _sum: { downloadCount: true, viewCount: true },
-    });
+    const [stats, pinnedResources, badges, isFollowing, isFollowedBy] = await Promise.all([
+      prisma.resource.aggregate({
+        where: { authorId: user.id, status: 'approved', deletedAt: null },
+        _count: { _all: true },
+        _sum: { downloadCount: true, viewCount: true },
+      }),
+      prisma.pinnedResource.findMany({
+        where: { userId: user.id, resource: { status: 'approved', deletedAt: null } },
+        orderBy: { position: 'asc' },
+        include: { resource: { include: resourceInclude } },
+      }),
+      BadgeService.listForUser(username, viewerId, viewerIsAdmin),
+      viewerId
+        ? prisma.follow.findUnique({ where: { followerId_followingId: { followerId: viewerId, followingId: user.id } } })
+        : null,
+      viewerId
+        ? prisma.follow.findUnique({ where: { followerId_followingId: { followerId: user.id, followingId: viewerId } } })
+        : null,
+    ]);
+
+    const contributorLevel = resolveContributorLevel(user.reputationScore);
 
     return {
       id: user.id,
       username: user.username,
       display_name: user.displayName,
       avatar_url: await resolveAvatarUrl(user.avatarUrl),
+      cover_image: await resolveCoverImageUrl(user.coverImage),
       bio: user.bio,
+      headline: user.headline,
       institution: user.institution,
       location: user.location,
       website_url: user.websiteUrl,
       github_url: user.githubUrl,
+      gitlab_url: user.gitlabUrl,
       scholar_url: user.scholarUrl,
       kaggle_url: user.kaggleUrl,
       huggingface_url: user.huggingfaceUrl,
       linkedin_url: user.linkedinUrl,
       orcid_id: user.orcidId,
       x_url: user.xUrl,
+      research_interests: user.researchInterests,
+      skills: user.skills,
+      languages: user.languages,
+      profile_visibility: user.profileVisibility,
       reputation_score: user.reputationScore,
+      contributor_level: contributorLevel.level,
+      contributor_next_level: contributorLevel.nextLevel,
+      contributor_next_threshold: contributorLevel.nextThreshold,
       is_verified: user.isVerified,
+      follower_count: user.followerCount,
+      following_count: user.followingCount,
+      is_following: Boolean(isFollowing),
+      is_followed_by: Boolean(isFollowedBy),
+      is_mutual: Boolean(isFollowing) && Boolean(isFollowedBy),
+      badges,
+      pinned_resources: await Promise.all(pinnedResources.map((pin) => toResourceDto(pin.resource))),
       resources: await Promise.all(user.authoredResources.map(toResourceDto)),
+      created_at: user.createdAt,
       stats: {
         total_resources: stats._count._all,
         total_downloads: stats._sum.downloadCount ?? 0,
@@ -159,30 +237,79 @@ export class UserService {
       throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
     }
 
+    const contributorLevel = resolveContributorLevel(user.reputationScore);
+
     return {
       id: user.id,
       email: user.email,
       username: user.username,
       display_name: user.displayName,
       avatar_url: await resolveAvatarUrl(user.avatarUrl),
+      cover_image: await resolveCoverImageUrl(user.coverImage),
       bio: user.bio,
+      headline: user.headline,
       institution: user.institution,
       location: user.location,
       website_url: user.websiteUrl,
       github_url: user.githubUrl,
+      gitlab_url: user.gitlabUrl,
       scholar_url: user.scholarUrl,
       kaggle_url: user.kaggleUrl,
       huggingface_url: user.huggingfaceUrl,
       linkedin_url: user.linkedinUrl,
       orcid_id: user.orcidId,
       x_url: user.xUrl,
+      research_interests: user.researchInterests,
+      skills: user.skills,
+      languages: user.languages,
+      profile_visibility: user.profileVisibility,
       reputation_score: user.reputationScore,
+      contributor_level: contributorLevel.level,
+      contributor_next_level: contributorLevel.nextLevel,
+      contributor_next_threshold: contributorLevel.nextThreshold,
       is_verified: user.isVerified,
       email_verified: user.emailVerified,
+      follower_count: user.followerCount,
+      following_count: user.followingCount,
       created_at: user.createdAt,
       last_login_at: user.lastLoginAt,
       roles: await getUserRoleNames(user.id),
+      // Settings' Security/Google Account tabs need this to know which sign-in
+      // methods actually apply — a user can have either, both, or (mid-OAuth
+      // registration) neither, so nothing about auth method may be assumed.
+      has_password: Boolean(user.passwordHash),
+      has_google: Boolean(user.googleId),
+      muted_notification_categories: user.mutedNotificationCategories,
     };
+  }
+
+  // Settings > Notifications' per-category toggle. Stores only the *muted*
+  // keys (see notificationCategories.ts) — enabling a category removes it
+  // from the array, disabling adds it, so an empty array (every new user's
+  // default) means everything is on with no migration/backfill needed.
+  static async updateNotificationPreference(
+    userId: string,
+    category: NotificationCategoryKey,
+    enabled: boolean,
+  ): Promise<{ muted_notification_categories: string[] }> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { mutedNotificationCategories: true },
+    });
+    if (!user) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
+    }
+
+    const withoutCategory = user.mutedNotificationCategories.filter((key) => key !== category);
+    const nextMuted = enabled ? withoutCategory : [...withoutCategory, category];
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { mutedNotificationCategories: nextMuted },
+      select: { mutedNotificationCategories: true },
+    });
+
+    return { muted_notification_categories: updated.mutedNotificationCategories };
   }
 
   static async updateProfile(
@@ -199,16 +326,22 @@ export class UserService {
       data: {
         displayName: input.display_name,
         bio: input.bio,
+        headline: input.headline,
         institution: input.institution,
         location: input.location,
         websiteUrl: input.website_url,
         githubUrl: input.github_url,
+        gitlabUrl: input.gitlab_url,
         scholarUrl: input.scholar_url,
         kaggleUrl: input.kaggle_url,
         huggingfaceUrl: input.huggingface_url,
         linkedinUrl: input.linkedin_url,
         orcidId: input.orcid_id,
         xUrl: input.x_url,
+        researchInterests: input.research_interests,
+        skills: input.skills,
+        languages: input.languages,
+        profileVisibility: input.visibility,
       },
     });
 
@@ -224,6 +357,8 @@ export class UserService {
       },
       newValue: input,
     });
+
+    void UserSearchService.indexUser(userId);
 
     return this.getOwnProfile(userId);
   }
@@ -249,6 +384,40 @@ export class UserService {
 
     const avatarUrl = await StorageService.getSignedAvatarUrl(key);
     return { avatar_url: avatarUrl };
+  }
+
+  static async uploadCoverImage(userId: string, file: UploadedFile): Promise<{ cover_image: string }> {
+    const existing = await prisma.user.findUnique({ where: { id: userId }, select: { coverImage: true } });
+    const { key } = await StorageService.uploadCoverImage(userId, file);
+
+    await prisma.user.update({ where: { id: userId }, data: { coverImage: key } });
+    await StorageService.deleteObject(existing?.coverImage).catch(() => {});
+
+    await writeAuditLog({
+      actorId: userId,
+      action: 'user.cover_image_upload',
+      targetType: 'user',
+      targetId: userId,
+      newValue: { key },
+    });
+
+    const coverImageUrl = await StorageService.getSignedCoverUrl(key);
+    return { cover_image: coverImageUrl };
+  }
+
+  static async removeCoverImage(userId: string): Promise<void> {
+    const existing = await prisma.user.findUnique({ where: { id: userId }, select: { coverImage: true } });
+    if (!existing?.coverImage) return;
+
+    await prisma.user.update({ where: { id: userId }, data: { coverImage: null } });
+    await StorageService.deleteObject(existing.coverImage).catch(() => {});
+
+    await writeAuditLog({
+      actorId: userId,
+      action: 'user.cover_image_remove',
+      targetType: 'user',
+      targetId: userId,
+    });
   }
 
   static async listBookmarks(
@@ -375,6 +544,10 @@ export class UserService {
   }
 
   static async getDashboard(userId: string): Promise<Record<string, unknown>> {
+    const now = new Date();
+    const startOfThisMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const startOfLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+
     const [
       statusCounts,
       resourceTotals,
@@ -384,6 +557,16 @@ export class UserService {
       shareCount,
       mostDownloaded,
       recentDownloads,
+      recentFollowers,
+      pinnedResources,
+      totalUsers,
+      totalPlatformResources,
+      thisMonthViews,
+      lastMonthViews,
+      thisMonthDownloads,
+      lastMonthDownloads,
+      thisMonthSubmissions,
+      lastMonthSubmissions,
     ] = await Promise.all([
       prisma.resource.groupBy({
         by: ['status'],
@@ -396,7 +579,7 @@ export class UserService {
       }),
       prisma.bookmark.count({ where: { userId } }),
       prisma.notification.count({ where: { userId, isRead: false } }),
-      prisma.user.findUnique({ where: { id: userId }, select: { reputationScore: true } }),
+      prisma.user.findUnique({ where: { id: userId } }),
       // No dedicated share_count column (see ResourceService.logShare) —
       // counted from the analytics events themselves.
       prisma.resourceAnalytics.count({
@@ -413,6 +596,45 @@ export class UserService {
         take: 5,
         include: { resource: { select: { id: true, slug: true, title: true, type: true } } },
       }),
+      prisma.follow.findMany({
+        where: { followingId: userId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        include: {
+          follower: { select: { id: true, username: true, displayName: true, avatarUrl: true, isVerified: true } },
+        },
+      }),
+      prisma.pinnedResource.findMany({
+        where: { userId, resource: { status: 'approved', deletedAt: null } },
+        orderBy: { position: 'asc' },
+        include: { resource: { include: resourceInclude } },
+      }),
+      prisma.user.count({ where: { deletedAt: null, status: 'active' } }),
+      prisma.resource.count({ where: { status: 'approved', deletedAt: null } }),
+      prisma.resourceAnalytics.count({
+        where: { eventType: 'view', resource: { authorId: userId, deletedAt: null }, createdAt: { gte: startOfThisMonth } },
+      }),
+      prisma.resourceAnalytics.count({
+        where: {
+          eventType: 'view',
+          resource: { authorId: userId, deletedAt: null },
+          createdAt: { gte: startOfLastMonth, lt: startOfThisMonth },
+        },
+      }),
+      prisma.resourceAnalytics.count({
+        where: { eventType: 'download', resource: { authorId: userId, deletedAt: null }, createdAt: { gte: startOfThisMonth } },
+      }),
+      prisma.resourceAnalytics.count({
+        where: {
+          eventType: 'download',
+          resource: { authorId: userId, deletedAt: null },
+          createdAt: { gte: startOfLastMonth, lt: startOfThisMonth },
+        },
+      }),
+      prisma.resource.count({ where: { authorId: userId, deletedAt: null, createdAt: { gte: startOfThisMonth } } }),
+      prisma.resource.count({
+        where: { authorId: userId, deletedAt: null, createdAt: { gte: startOfLastMonth, lt: startOfThisMonth } },
+      }),
     ]);
 
     if (!user) {
@@ -423,6 +645,9 @@ export class UserService {
       statusCounts.map((row) => [row.status, row._count._all]),
     );
     const totalSubmissions = statusCounts.reduce((sum, row) => sum + row._count._all, 0);
+
+    const filledFieldCount = PROFILE_COMPLETION_FIELDS.filter((field) => Boolean(user[field])).length;
+    const profileCompletionPercent = Math.round((filledFieldCount / PROFILE_COMPLETION_FIELDS.length) * 100);
 
     return {
       total_submissions: totalSubmissions,
@@ -458,6 +683,30 @@ export class UserService {
         },
         downloaded_at: event.createdAt,
       })),
+      // --- Phase 4B ---------------------------------------------------------
+      follower_count: user.followerCount,
+      following_count: user.followingCount,
+      profile_completion_percent: profileCompletionPercent,
+      recent_followers: await Promise.all(
+        recentFollowers.map(async (row) => ({
+          id: row.follower.id,
+          username: row.follower.username,
+          display_name: row.follower.displayName,
+          avatar_url: await resolveAvatarUrl(row.follower.avatarUrl),
+          is_verified: row.follower.isVerified,
+          followed_at: row.createdAt,
+        })),
+      ),
+      pinned_resources: await Promise.all(pinnedResources.map((pin) => toResourceDto(pin.resource))),
+      community_stats: {
+        total_users: totalUsers,
+        total_resources: totalPlatformResources,
+      },
+      monthly_summary: {
+        views: { this_month: thisMonthViews, last_month: lastMonthViews },
+        downloads: { this_month: thisMonthDownloads, last_month: lastMonthDownloads },
+        submissions: { this_month: thisMonthSubmissions, last_month: lastMonthSubmissions },
+      },
     };
   }
 
@@ -471,6 +720,7 @@ export class UserService {
 
     if (query.status) where.status = query.status;
     if (query.role) where.userRoles = { some: { role: { name: query.role } } };
+    if (query.scope === 'staff') where.userRoles = { some: { role: { name: { in: STAFF_ROLES } } } };
     if (query.search) {
       where.OR = [
         { username: { contains: query.search, mode: 'insensitive' } },
@@ -537,16 +787,22 @@ export class UserService {
       data: {
         displayName: input.display_name,
         bio: input.bio,
+        headline: input.headline,
         institution: input.institution,
         location: input.location,
         websiteUrl: input.website_url,
         githubUrl: input.github_url,
+        gitlabUrl: input.gitlab_url,
         scholarUrl: input.scholar_url,
         kaggleUrl: input.kaggle_url,
         huggingfaceUrl: input.huggingface_url,
         linkedinUrl: input.linkedin_url,
         orcidId: input.orcid_id,
         xUrl: input.x_url,
+        researchInterests: input.research_interests,
+        skills: input.skills,
+        languages: input.languages,
+        profileVisibility: input.visibility,
       },
     });
 
@@ -664,6 +920,52 @@ export class UserService {
       targetId: id,
       oldValue: { deletedAt: null },
       newValue: { deletedAt: new Date().toISOString() },
+    });
+  }
+
+  // --- Phase 4B — admin profile moderation ------------------------------------
+
+  static async setVerified(id: string, verified: boolean, actorId: string): Promise<unknown> {
+    const before = await prisma.user.findUnique({ where: { id } });
+    if (!before || before.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
+    }
+
+    await prisma.user.update({ where: { id }, data: { isVerified: verified } });
+
+    await writeAuditLog({
+      actorId,
+      action: verified ? 'admin.user.verify' : 'admin.user.unverify',
+      targetType: 'user',
+      targetId: id,
+      oldValue: { isVerified: before.isVerified },
+      newValue: { isVerified: verified },
+    });
+
+    void UserSearchService.indexUser(id);
+
+    if (verified) {
+      await BadgeService.checkAndAwardMilestones(id);
+    }
+
+    return this.getUserByIdAdmin(id);
+  }
+
+  static async adminResetCoverImage(id: string, actorId: string): Promise<void> {
+    const user = await prisma.user.findUnique({ where: { id }, select: { coverImage: true, deletedAt: true } });
+    if (!user || user.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'User not found.');
+    }
+    if (!user.coverImage) return;
+
+    await prisma.user.update({ where: { id }, data: { coverImage: null } });
+    await StorageService.deleteObject(user.coverImage).catch(() => {});
+
+    await writeAuditLog({
+      actorId,
+      action: 'admin.user.reset_cover_image',
+      targetType: 'user',
+      targetId: id,
     });
   }
 }

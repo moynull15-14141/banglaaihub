@@ -4,18 +4,20 @@ import { useState } from 'react';
 import { isAxiosError } from 'axios';
 import { notFound, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Bookmark, BookmarkCheck, ExternalLink, FileText, Flag } from 'lucide-react';
+import { Bookmark, BookmarkCheck, ExternalLink, FileText, Flag, Heart } from 'lucide-react';
 import { Breadcrumb } from '@/components/common/Breadcrumb';
 import { DetailSkeleton } from '@/components/common/LoadingSkeleton';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageContainer } from '@/components/common/PageContainer';
 import { AttachmentsSection } from '@/components/resource/AttachmentsSection';
 import { CitationBlock } from '@/components/resource/CitationBlock';
+import { DiscussionSection } from '@/components/discussion/DiscussionSection';
 import { ForkPromptButton } from '@/components/resource/ForkPromptButton';
 import { MoreFromAuthorCard } from '@/components/resource/MoreFromAuthorCard';
 import { ReportResourceDialog } from '@/components/resource/ReportResourceDialog';
 import { ResourceMeta } from '@/components/resource/ResourceMeta';
 import { ResourceTypeMetadata } from '@/components/resource/ResourceTypeMetadata';
+import { ReviewsSection } from '@/components/review/ReviewsSection';
 import { ShareButtons } from '@/components/resource/ShareButtons';
 import { SimilarResourcesCard } from '@/components/resource/SimilarResourcesCard';
 import { TagBadge } from '@/components/resource/TagBadge';
@@ -25,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { UserCard } from '@/components/user/UserCard';
 import { ResourceJsonLd } from '@/components/seo/JsonLd';
 import { useAuth } from '@/lib/hooks/useAuth';
+import { useToggleResourceLike } from '@/lib/hooks/useLikes';
 import { useReportResource, useResource, useToggleResourceBookmark } from '@/lib/hooks/useResources';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
 import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
@@ -47,8 +50,23 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
   const { isAuthenticated } = useAuth();
   const { data: resource, isLoading, isError, error, refetch } = useResource(slug);
   const toggleBookmarkMutation = useToggleResourceBookmark(slug);
+  const toggleLikeMutation = useToggleResourceLike(slug);
   const reportMutation = useReportResource(slug);
   const [reportOpen, setReportOpen] = useState(false);
+
+  function handleLikeClick() {
+    if (!isAuthenticated) {
+      router.push(ROUTES.login);
+      return;
+    }
+    if (!resource) return;
+    toggleLikeMutation.mutate(
+      { add: !resource.is_liked },
+      {
+        onError: (error) => toast.error(errorMessage(error, 'Could not update your like.')),
+      },
+    );
+  }
 
   function handleBookmarkClick() {
     if (!isAuthenticated) {
@@ -134,6 +152,8 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
           downloadCount={resource.download_count}
           bookmarkCount={resource.bookmark_count}
           publishedAt={resource.published_at}
+          avgRating={resource.avg_rating}
+          reviewCount={resource.review_count}
         />
         <p className="text-xs text-muted-foreground">Last updated {formatDate(resource.updated_at)}</p>
       </div>
@@ -152,6 +172,19 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
               <Bookmark className="size-4" aria-hidden="true" />
             )}
             {resource.is_bookmarked ? 'Bookmarked' : 'Bookmark'}
+          </Button>
+          <Button
+            type="button"
+            variant={resource.is_liked ? 'secondary' : 'outline'}
+            disabled={toggleLikeMutation.isPending}
+            onClick={handleLikeClick}
+          >
+            <Heart
+              className="size-4"
+              aria-hidden="true"
+              fill={resource.is_liked ? 'currentColor' : 'none'}
+            />
+            {resource.is_liked ? 'Liked' : 'Like'}
           </Button>
           {resource.external_url ? (
             <Button asChild variant="outline">
@@ -233,6 +266,10 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
           excludeSlug={resource.slug}
         />
       ) : null}
+
+      <ReviewsSection resourceSlug={resource.slug} resourceAuthorId={resource.author?.id ?? null} />
+
+      <DiscussionSection resourceSlug={resource.slug} />
 
       <ReportResourceDialog
         open={reportOpen}

@@ -3,8 +3,16 @@
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FilterSelect } from '@/components/common/FilterSelect';
 import { SortDropdown } from '@/components/resource/SortDropdown';
+
+export type UsersScope = 'all' | 'staff';
+
+const SCOPE_TABS: { value: UsersScope; label: string }[] = [
+  { value: 'all', label: 'All users' },
+  { value: 'staff', label: 'Staff' },
+];
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -18,6 +26,8 @@ const SORT_OPTIONS = [
 ];
 
 interface UsersFiltersProps {
+  scope: UsersScope;
+  onScopeChange: (value: UsersScope) => void;
   search: string;
   onSearchChange: (value: string) => void;
   status: string | undefined;
@@ -27,6 +37,8 @@ interface UsersFiltersProps {
 }
 
 export function UsersFilters({
+  scope,
+  onScopeChange,
   search,
   onSearchChange,
   status,
@@ -35,41 +47,53 @@ export function UsersFilters({
   onSortChange,
 }: UsersFiltersProps) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-      <div className="relative flex-1 sm:min-w-56">
-        <Label htmlFor="users-search" className="sr-only">
-          Search by name, username, or email
-        </Label>
-        <Search
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          id="users-search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search by name, username, or email…"
-          className="pl-9"
-        />
-      </div>
-
-      <div className="w-full space-y-1.5 sm:w-40">
-        <Label htmlFor="users-status">Status</Label>
-        <FilterSelect
-          id="users-status"
-          value={status ?? ''}
-          onChange={(event) => onStatusChange(event.target.value || undefined)}
-        >
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
+    <div className="flex flex-col gap-4">
+      <Tabs value={scope} onValueChange={(value) => onScopeChange(value as UsersScope)}>
+        <TabsList>
+          {SCOPE_TABS.map((t) => (
+            <TabsTrigger key={t.value} value={t.value}>
+              {t.label}
+            </TabsTrigger>
           ))}
-        </FilterSelect>
-      </div>
+        </TabsList>
+      </Tabs>
 
-      <SortDropdown options={SORT_OPTIONS} value={sort} onChange={onSortChange} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="relative flex-1 sm:min-w-56">
+          <Label htmlFor="users-search" className="sr-only">
+            Search by name, username, or email
+          </Label>
+          <Search
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            id="users-search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search by name, username, or email…"
+            className="pl-9"
+          />
+        </div>
+
+        <div className="w-full space-y-1.5 sm:w-40">
+          <Label htmlFor="users-status">Status</Label>
+          <FilterSelect
+            id="users-status"
+            value={status ?? ''}
+            onChange={(event) => onStatusChange(event.target.value || undefined)}
+          >
+            <option value="">All statuses</option>
+            {STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </FilterSelect>
+        </div>
+
+        <SortDropdown options={SORT_OPTIONS} value={sort} onChange={onSortChange} />
+      </div>
     </div>
   );
 }

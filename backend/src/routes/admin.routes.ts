@@ -2,16 +2,29 @@ import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
+import { feedAnnouncementImageUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
 import {
+  createBadgeSchema,
+  grantBadgeSchema,
   listAuditLogsQuerySchema,
   listReportsQuerySchema,
   listUsersQuerySchema,
   rejectReportSchema,
+  updateAutoApprovalSettingSchema,
+  updateBadgeSchema,
   updateReportStatusSchema,
   updateUserRolesSchema,
   updateUserStatusSchema,
 } from '../validators/admin.validator';
+import {
+  createFeedAnnouncementSchema,
+  createFeedPinSchema,
+  previewFeedSchema,
+  updateFeedAnnouncementSchema,
+  updateFeedConfigSchema,
+  updateFeedPinSchema,
+} from '../validators/feed.validator';
 import { updateProfileSchema } from '../validators/user.validator';
 import { listResourcesQuerySchema } from '../validators/resource.validator';
 import {
@@ -22,6 +35,19 @@ import {
 const router = Router();
 
 // --- Resource moderation ---
+router.get(
+  '/settings/auto-approval',
+  authenticate,
+  authorize('resource:approve'),
+  adminController.getAutoApprovalSetting,
+);
+router.patch(
+  '/settings/auto-approval',
+  authenticate,
+  authorize('resource:approve'),
+  validate(updateAutoApprovalSettingSchema),
+  adminController.updateAutoApprovalSetting,
+);
 router.get(
   '/resources/pending',
   authenticate,
@@ -91,6 +117,54 @@ router.patch(
   adminController.updateUserRoles,
 );
 router.delete('/users/:id', authenticate, authorize('user:ban'), adminController.deleteUser);
+
+// --- Phase 4B — profile moderation ---
+router.post('/users/:id/verify', authenticate, authorize('user:verify'), adminController.verifyUser);
+router.delete('/users/:id/verify', authenticate, authorize('user:verify'), adminController.unverifyUser);
+router.post(
+  '/users/:id/cover-image/reset',
+  authenticate,
+  authorize('profile:moderate'),
+  adminController.resetUserCoverImage,
+);
+router.get(
+  '/users/:id/activity',
+  authenticate,
+  authorize('user:manage'),
+  adminController.getUserActivity,
+);
+router.post(
+  '/users/:id/badges',
+  authenticate,
+  authorize('user:manage_badges'),
+  validate(grantBadgeSchema),
+  adminController.grantBadge,
+);
+router.delete(
+  '/users/:id/badges/:badgeId',
+  authenticate,
+  authorize('user:manage_badges'),
+  adminController.revokeBadge,
+);
+router.delete('/follows/:id', authenticate, authorize('profile:moderate'), adminController.removeFollow);
+
+// --- Phase 4B — badge catalog ---
+router.get('/badges', authenticate, authorize('user:manage_badges'), adminController.listBadges);
+router.post(
+  '/badges',
+  authenticate,
+  authorize('user:manage_badges'),
+  validate(createBadgeSchema),
+  adminController.createBadge,
+);
+router.patch(
+  '/badges/:id',
+  authenticate,
+  authorize('user:manage_badges'),
+  validate(updateBadgeSchema),
+  adminController.updateBadge,
+);
+router.delete('/badges/:id', authenticate, authorize('user:manage_badges'), adminController.deleteBadge);
 
 // --- Reports ---
 router.get(
@@ -176,6 +250,90 @@ router.get(
   authenticate,
   authorize('system:audit_log_view'),
   adminController.getSearchAnalytics,
+);
+
+// --- Feed engine (Phase 4D) ---------------------------------------------------------
+// Weight/diversity tuning and announcements are platform-wide config — gated
+// at the broader admin:manage tier. Pin management reuses resource:feature
+// (the existing "can feature a resource" permission), since curating feed
+// placement is a superset of that same capability.
+router.get('/feed/config', authenticate, authorize('admin:manage'), adminController.getFeedConfig);
+router.patch(
+  '/feed/config',
+  authenticate,
+  authorize('admin:manage'),
+  validate(updateFeedConfigSchema),
+  adminController.updateFeedConfig,
+);
+
+// Phase 4C, Stage 1 — Live Preview (read-only, never persists) and
+// rollback (persists via the same updateConfig() write path, so it's
+// gated identically to a normal config edit). Config history itself has
+// no dedicated route — see GET /admin/audit-logs?target_type=feed_config.
+router.post(
+  '/feed/preview',
+  authenticate,
+  authorize('admin:manage'),
+  validate(previewFeedSchema),
+  adminController.previewFeedConfig,
+);
+router.post(
+  '/feed/config/rollback/:auditLogId',
+  authenticate,
+  authorize('admin:manage'),
+  adminController.rollbackFeedConfig,
+);
+
+router.get('/feed/pins', authenticate, authorize('resource:feature'), adminController.listFeedPins);
+router.post(
+  '/feed/pins',
+  authenticate,
+  authorize('resource:feature'),
+  validate(createFeedPinSchema),
+  adminController.createFeedPin,
+);
+router.patch(
+  '/feed/pins/:id',
+  authenticate,
+  authorize('resource:feature'),
+  validate(updateFeedPinSchema),
+  adminController.updateFeedPin,
+);
+router.delete('/feed/pins/:id', authenticate, authorize('resource:feature'), adminController.deleteFeedPin);
+
+router.get('/feed/announcements', authenticate, authorize('admin:manage'), adminController.listFeedAnnouncements);
+router.post(
+  '/feed/announcements',
+  authenticate,
+  authorize('admin:manage'),
+  validate(createFeedAnnouncementSchema),
+  adminController.createFeedAnnouncement,
+);
+router.patch(
+  '/feed/announcements/:id',
+  authenticate,
+  authorize('admin:manage'),
+  validate(updateFeedAnnouncementSchema),
+  adminController.updateFeedAnnouncement,
+);
+router.delete(
+  '/feed/announcements/:id',
+  authenticate,
+  authorize('admin:manage'),
+  adminController.deleteFeedAnnouncement,
+);
+router.post(
+  '/feed/announcements/:id/image',
+  authenticate,
+  authorize('admin:manage'),
+  feedAnnouncementImageUpload.single('file'),
+  adminController.uploadFeedAnnouncementImage,
+);
+router.delete(
+  '/feed/announcements/:id/image',
+  authenticate,
+  authorize('admin:manage'),
+  adminController.removeFeedAnnouncementImage,
 );
 
 export default router;

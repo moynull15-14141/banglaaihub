@@ -11,6 +11,7 @@ import {
   verifyRefreshToken,
 } from '../utils/jwt';
 import { EmailService } from './email.service';
+import { StorageService } from './storage.service';
 
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_HISTORY_LIMIT = 5;
@@ -79,22 +80,20 @@ async function issueTokenPair(
   return { accessToken, refreshToken };
 }
 
-function toPublicUser(user: {
+async function toPublicUser(user: {
   id: string;
   email: string;
   username: string;
   displayName: string | null;
   avatarUrl?: string | null;
   reputationScore: number;
-}): Omit<PublicUser, 'roles'> {
+}): Promise<Omit<PublicUser, 'roles'>> {
   return {
     id: user.id,
     email: user.email,
     username: user.username,
     displayName: user.displayName,
-    // Only pass through externally-hosted URLs (e.g. Google's photo) here —
-    // R2 object keys need signing, which this synchronous mapper can't do.
-    avatarUrl: user.avatarUrl && /^https?:\/\//i.test(user.avatarUrl) ? user.avatarUrl : null,
+    avatarUrl: await StorageService.resolveAvatarUrl(user.avatarUrl ?? null),
     reputationScore: user.reputationScore,
   };
 }
@@ -184,7 +183,7 @@ export class AuthService {
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
-    return { accessToken, refreshToken, user: { ...toPublicUser(user), roles } };
+    return { accessToken, refreshToken, user: { ...(await toPublicUser(user)), roles } };
   }
 
   static async refresh(refreshToken: string, context: RequestContext): Promise<AuthTokens> {
@@ -446,6 +445,6 @@ export class AuthService {
       },
     });
 
-    return { accessToken, refreshToken, user: { ...toPublicUser(user), roles } };
+    return { accessToken, refreshToken, user: { ...(await toPublicUser(user)), roles } };
   }
 }

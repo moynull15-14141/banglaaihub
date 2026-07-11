@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { isAxiosError } from 'axios';
 import { notFound } from 'next/navigation';
+import { SlidersHorizontal } from 'lucide-react';
 import { Breadcrumb } from '@/components/common/Breadcrumb';
 import { CardGridSkeleton } from '@/components/common/LoadingSkeleton';
 import { ErrorState } from '@/components/common/ErrorState';
@@ -11,7 +12,10 @@ import { FilterSidebar } from '@/components/resource/FilterSidebar';
 import { ResourceGrid, type ResourceGridView } from '@/components/resource/ResourceGrid';
 import { SortDropdown } from '@/components/resource/SortDropdown';
 import { ViewToggle } from '@/components/resource/ViewToggle';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useCategory } from '@/lib/hooks/useCategories';
 import { useResources } from '@/lib/hooks/useResources';
 import { useResourceBrowseParams } from '@/lib/hooks/useResourceBrowseParams';
@@ -36,6 +40,7 @@ interface CategoryViewProps {
 
 export function CategoryView({ slug }: CategoryViewProps) {
   const [view, setView] = useState<ResourceGridView>('grid');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const category = useCategory(slug);
 
   const { page, sort, type, language, license, author, verified, tags, updateParams, clearFilters } =
@@ -78,6 +83,29 @@ export function CategoryView({ slug }: CategoryViewProps) {
 
   if (!category.data) return null;
 
+  const activeFilterCount = [type, language, license, author, verified, tags && tags.length > 0].filter(
+    Boolean,
+  ).length;
+
+  const filterSidebarProps = {
+    showTypeFilter: true,
+    type,
+    onTypeChange: (value: string | undefined) => updateParams({ type: value }),
+    showCategoryFilter: false,
+    language,
+    onLanguageChange: (value: string | undefined) => updateParams({ language: value }),
+    license,
+    onLicenseChange: (value: string | undefined) => updateParams({ license: value }),
+    author,
+    onAuthorChange: (value: string | undefined) => updateParams({ author: value }),
+    verified,
+    onVerifiedChange: (value: boolean) => updateParams({ verified: value ? 'true' : undefined }),
+    tags,
+    onTagsChange: (value: string[] | undefined) =>
+      updateParams({ tags: value && value.length > 0 ? value.join(',') : undefined }),
+    onClear: clearFilters,
+  };
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: 'Categories', href: ROUTES.categories }, { label: category.data.name }]} />
@@ -92,26 +120,8 @@ export function CategoryView({ slug }: CategoryViewProps) {
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[240px_1fr]">
-        <Card className="h-fit p-4">
-          <FilterSidebar
-            showTypeFilter
-            type={type}
-            onTypeChange={(value) => updateParams({ type: value })}
-            showCategoryFilter={false}
-            language={language}
-            onLanguageChange={(value) => updateParams({ language: value })}
-            license={license}
-            onLicenseChange={(value) => updateParams({ license: value })}
-            author={author}
-            onAuthorChange={(value) => updateParams({ author: value })}
-            verified={verified}
-            onVerifiedChange={(value) => updateParams({ verified: value ? 'true' : undefined })}
-            tags={tags}
-            onTagsChange={(value) =>
-              updateParams({ tags: value && value.length > 0 ? value.join(',') : undefined })
-            }
-            onClear={clearFilters}
-          />
+        <Card className="hidden h-fit p-4 lg:block">
+          <FilterSidebar {...filterSidebarProps} />
         </Card>
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-2">
@@ -119,6 +129,15 @@ export function CategoryView({ slug }: CategoryViewProps) {
               {resources.data ? `${resources.data.meta.total ?? 0} results` : null}
             </p>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setFiltersOpen(true)}>
+                <SlidersHorizontal className="size-4" aria-hidden="true" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <Badge variant="brand" className="h-4 min-w-4 px-1 text-[10px]">
+                    {activeFilterCount}
+                  </Badge>
+                ) : null}
+              </Button>
               <ViewToggle value={view} onChange={setView} />
               <SortDropdown
                 options={SORT_OPTIONS}
@@ -144,6 +163,15 @@ export function CategoryView({ slug }: CategoryViewProps) {
           ) : null}
         </div>
       </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="left" className="overflow-y-auto p-4">
+          <SheetHeader className="p-0">
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+          <FilterSidebar {...filterSidebarProps} showHeading={false} />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
