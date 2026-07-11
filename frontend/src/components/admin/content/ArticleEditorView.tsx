@@ -18,6 +18,7 @@ import { FilterSelect } from '@/components/common/FilterSelect';
 import { RichTextEditor } from '@/components/resource/RichTextEditor';
 import { ThumbnailUrlInput } from '@/components/resource/ThumbnailUrlInput';
 import { SeoScorePanel } from '@/components/admin/content/seo/SeoScorePanel';
+import { SeoDetailsPanel } from '@/components/admin/content/seo/SeoDetailsPanel';
 import { WorkflowTransitionMenu } from '@/components/admin/content/workflow/WorkflowTransitionMenu';
 import { LockBanner } from '@/components/admin/content/workflow/LockBanner';
 import { AssignmentPanel } from '@/components/admin/content/workflow/AssignmentPanel';
@@ -207,6 +208,13 @@ export function ArticleEditorView({ slug }: ArticleEditorViewProps) {
           isEditing && form.article.featured_image_url === initialFeaturedImageUrl
             ? undefined
             : form.article.featured_image_url?.trim() || undefined,
+        // canonical_url is validated as a URL server-side (z.string().url()) —
+        // an empty string isn't a valid URL, so "no canonical URL" must be
+        // sent as omitted, not ''. Editing an existing article whose
+        // canonical_url was never set loads it as '' (see the ?? '' below),
+        // and without this it round-trips straight back out as '' on save,
+        // 400ing every update to that article until the field is touched.
+        canonical_url: form.article.canonical_url?.trim() || undefined,
       },
     };
   }
@@ -300,9 +308,27 @@ export function ArticleEditorView({ slug }: ArticleEditorViewProps) {
     .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, 10);
+  // Shared by SeoScorePanel (score + checklist, in the sticky sidebar) and
+  // SeoDetailsPanel (previews + advanced fields, in the main column) so
+  // both stay in sync off one object instead of two separately-built ones.
+  const seoInput = {
+    title: form.title,
+    slug: currentSlug ?? '',
+    excerpt: form.article.excerpt,
+    bodyHtml: form.article.body,
+    focusKeyword: form.article.focus_keyword,
+    seoTitle: form.article.seo_title,
+    seoDescription: form.article.seo_description,
+    canonicalUrl: form.article.canonical_url,
+    featuredImageUrl: form.article.featured_image_url,
+    featuredImageAlt: form.article.featured_image_alt,
+    categoryId: form.category_id,
+    tags: previewTags,
+    siteOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+  };
 
   return (
-    <PageContainer className="max-w-3xl">
+    <PageContainer className="max-w-6xl">
       {currentSlug ? <LockBanner slug={currentSlug} enabled /> : null}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -319,283 +345,281 @@ export function ArticleEditorView({ slug }: ArticleEditorViewProps) {
         {resource && currentSlug ? <WorkflowTransitionMenu slug={currentSlug} status={resource.status} /> : null}
       </div>
 
-      <form onSubmit={handleSaveDraft} className="mt-6 flex flex-col gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Content</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={form.title}
-                onChange={(event) => setForm({ ...form, title: event.target.value })}
-                required
-                minLength={5}
-                maxLength={300}
-                disabled={lockRejected}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="excerpt">Excerpt</Label>
-              <Textarea
-                id="excerpt"
-                value={form.article.excerpt ?? ''}
-                onChange={(event) =>
-                  setForm({ ...form, article: { ...form.article, excerpt: event.target.value } })
-                }
-                rows={2}
-                maxLength={500}
-                placeholder="A short summary shown in listings and search results."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="body">Body</Label>
-              <RichTextEditor
-                value={form.article.body ?? ''}
-                onChange={(html) => setForm({ ...form, article: { ...form.article, body: html } })}
-                placeholder="Write your article…"
-                onEditorReady={setEditor}
-                editable={!lockRejected}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form
+        onSubmit={handleSaveDraft}
+        className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start"
+      >
+        {/* SEO sidebar — sticky on the left so the live score/checklist stays
+            visible while writing, instead of only being reachable by
+            scrolling past the whole Content card. */}
+        <div className="order-2 flex flex-col gap-6 lg:sticky lg:top-20 lg:order-1 lg:self-start">
+          <Card>
+            <CardHeader>
+              <CardTitle>SEO overrides</CardTitle>
+              <CardDescription>Overrides for search engines and social sharing previews.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="content-type">Content type</Label>
-                <FilterSelect
-                  id="content-type"
-                  value={form.article.content_type ?? 'article'}
+                <Label htmlFor="seo-title">SEO title</Label>
+                <Input
+                  id="seo-title"
+                  value={form.article.seo_title ?? ''}
                   onChange={(event) =>
-                    setForm({
-                      ...form,
-                      article: { ...form.article, content_type: event.target.value as ArticleContentType },
-                    })
+                    setForm({ ...form, article: { ...form.article, seo_title: event.target.value } })
                   }
-                >
-                  {ARTICLE_CONTENT_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </FilterSelect>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="category">Category</Label>
-                <FilterSelect
-                  id="category"
-                  value={form.category_id ?? ''}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      category_id: event.target.value ? Number(event.target.value) : undefined,
-                    })
-                  }
-                >
-                  <option value="">No category</option>
-                  {(categories ?? []).map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </FilterSelect>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="tags">Tags</Label>
-              <Input
-                id="tags"
-                value={form.tagsText}
-                onChange={(event) => setForm({ ...form, tagsText: event.target.value })}
-                placeholder="bangla-nlp, tutorial, release"
-              />
-            </div>
-            <ThumbnailUrlInput
-              id="featured-image"
-              label="Featured image"
-              value={form.article.featured_image_url ?? ''}
-              onChange={(value) =>
-                setForm({ ...form, article: { ...form.article, featured_image_url: value } })
-              }
-              file={featuredImageFile}
-              onFileChange={handleFeaturedImageChange}
-              uploading={featuredImageUploadMutation.isPending}
-              uploaded={featuredImageUploadMutation.isSuccess}
-              uploadError={featuredImageUploadError}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>SEO</CardTitle>
-            <CardDescription>Overrides for search engines and social sharing previews.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="seo-title">SEO title</Label>
-              <Input
-                id="seo-title"
-                value={form.article.seo_title ?? ''}
-                onChange={(event) =>
-                  setForm({ ...form, article: { ...form.article, seo_title: event.target.value } })
-                }
-                maxLength={70}
-                placeholder="Defaults to the article title."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="seo-description">SEO description</Label>
-              <Textarea
-                id="seo-description"
-                value={form.article.seo_description ?? ''}
-                onChange={(event) =>
-                  setForm({ ...form, article: { ...form.article, seo_description: event.target.value } })
-                }
-                rows={2}
-                maxLength={200}
-                placeholder="Defaults to the excerpt."
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="canonical-url">Canonical URL</Label>
-              <Input
-                id="canonical-url"
-                type="url"
-                value={form.article.canonical_url ?? ''}
-                onChange={(event) =>
-                  setForm({ ...form, article: { ...form.article, canonical_url: event.target.value } })
-                }
-                placeholder="https://… (only if this content is republished from elsewhere)"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <SeoScorePanel
-          input={{
-            title: form.title,
-            slug: currentSlug ?? '',
-            excerpt: form.article.excerpt,
-            bodyHtml: form.article.body,
-            focusKeyword: form.article.focus_keyword,
-            seoTitle: form.article.seo_title,
-            seoDescription: form.article.seo_description,
-            canonicalUrl: form.article.canonical_url,
-            featuredImageUrl: form.article.featured_image_url,
-            featuredImageAlt: form.article.featured_image_alt,
-            categoryId: form.category_id,
-            tags: previewTags,
-            siteOrigin: typeof window !== 'undefined' ? window.location.origin : '',
-          }}
-          editor={editor}
-          focusKeyword={form.article.focus_keyword ?? ''}
-          onFocusKeywordChange={(value) => setForm({ ...form, article: { ...form.article, focus_keyword: value } })}
-          metaKeywords={form.article.meta_keywords ?? ''}
-          onMetaKeywordsChange={(value) => setForm({ ...form, article: { ...form.article, meta_keywords: value } })}
-          featuredImageAlt={form.article.featured_image_alt ?? ''}
-          onFeaturedImageAltChange={(value) =>
-            setForm({ ...form, article: { ...form.article, featured_image_alt: value } })
-          }
-          slugValue={slugValue}
-          onSlugChange={setSlugValue}
-          slugEditable={Boolean(currentSlug)}
-        />
-
-        {currentSlug ? <AssignmentPanel slug={currentSlug} /> : null}
-        {currentSlug ? <EditorialCommentsPanel slug={currentSlug} /> : null}
-        {currentSlug ? <RevisionHistoryPanel slug={currentSlug} /> : null}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Engagement</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {(
-              [
-                ['allow_comments', 'Allow comments'],
-                ['allow_reactions', 'Allow reactions'],
-                ['allow_sharing', 'Allow sharing'],
-              ] as const
-            ).map(([key, label]) => (
-              <div key={key} className="flex items-center justify-between">
-                <Label htmlFor={key}>{label}</Label>
-                <Switch
-                  id={key}
-                  checked={form.article[key] ?? true}
-                  onCheckedChange={(checked) => setForm({ ...form, article: { ...form.article, [key]: checked } })}
+                  maxLength={70}
+                  placeholder="Defaults to the article title."
                 />
               </div>
-            ))}
-          </CardContent>
-        </Card>
+              <div className="space-y-1.5">
+                <Label htmlFor="seo-description">SEO description</Label>
+                <Textarea
+                  id="seo-description"
+                  value={form.article.seo_description ?? ''}
+                  onChange={(event) =>
+                    setForm({ ...form, article: { ...form.article, seo_description: event.target.value } })
+                  }
+                  rows={2}
+                  maxLength={200}
+                  placeholder="Defaults to the excerpt."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="canonical-url">Canonical URL</Label>
+                <Input
+                  id="canonical-url"
+                  type="url"
+                  value={form.article.canonical_url ?? ''}
+                  onChange={(event) =>
+                    setForm({ ...form, article: { ...form.article, canonical_url: event.target.value } })
+                  }
+                  placeholder="https://… (only if this content is republished from elsewhere)"
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-        {currentSlug && isDraft ? (
-          <>
-            <PublishChecklist
-              input={{
-                title: form.title,
-                slug: slugValue,
-                excerpt: form.article.excerpt,
-                bodyHtml: form.article.body,
-                focusKeyword: form.article.focus_keyword,
-                seoTitle: form.article.seo_title,
-                seoDescription: form.article.seo_description,
-                canonicalUrl: form.article.canonical_url,
-                featuredImageUrl: form.article.featured_image_url,
-                featuredImageAlt: form.article.featured_image_alt,
-                categoryId: form.category_id,
-                tags: previewTags,
-                siteOrigin: typeof window !== 'undefined' ? window.location.origin : '',
-              }}
-              isAdmin={isAdmin}
-              override={checklistOverride}
-              onOverrideChange={setChecklistOverride}
-            />
-            <Card>
-              <CardHeader>
-                <CardTitle>Publish</CardTitle>
-                <CardDescription>Publish immediately, or schedule a future publish time.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
+          <SeoScorePanel input={seoInput} />
+        </div>
+
+        <div className="order-1 flex flex-col gap-6 lg:order-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Content</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={form.title}
+                  onChange={(event) => setForm({ ...form, title: event.target.value })}
+                  required
+                  minLength={5}
+                  maxLength={300}
+                  disabled={lockRejected}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="excerpt">Excerpt</Label>
+                <Textarea
+                  id="excerpt"
+                  value={form.article.excerpt ?? ''}
+                  onChange={(event) =>
+                    setForm({ ...form, article: { ...form.article, excerpt: event.target.value } })
+                  }
+                  rows={2}
+                  maxLength={500}
+                  placeholder="A short summary shown in listings and search results."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="body">Body</Label>
+                <RichTextEditor
+                  value={form.article.body ?? ''}
+                  onChange={(html) => setForm({ ...form, article: { ...form.article, body: html } })}
+                  placeholder="Write your article…"
+                  onEditorReady={setEditor}
+                  editable={!lockRejected}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="scheduled-at">Schedule for (optional)</Label>
-                  <Input
-                    id="scheduled-at"
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(event) => setScheduledAt(event.target.value)}
+                  <Label htmlFor="content-type">Content type</Label>
+                  <FilterSelect
+                    id="content-type"
+                    value={form.article.content_type ?? 'article'}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        article: { ...form.article, content_type: event.target.value as ArticleContentType },
+                      })
+                    }
+                  >
+                    {ARTICLE_CONTENT_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="category">Category</Label>
+                  <FilterSelect
+                    id="category"
+                    value={form.category_id ?? ''}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        category_id: event.target.value ? Number(event.target.value) : undefined,
+                      })
+                    }
+                  >
+                    <option value="">No category</option>
+                    {(categories ?? []).map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tags">Tags</Label>
+                <Input
+                  id="tags"
+                  value={form.tagsText}
+                  onChange={(event) => setForm({ ...form, tagsText: event.target.value })}
+                  placeholder="bangla-nlp, tutorial, release"
+                />
+              </div>
+              <ThumbnailUrlInput
+                id="featured-image"
+                label="Featured image"
+                value={form.article.featured_image_url ?? ''}
+                onChange={(value) =>
+                  setForm({ ...form, article: { ...form.article, featured_image_url: value } })
+                }
+                file={featuredImageFile}
+                onFileChange={handleFeaturedImageChange}
+                uploading={featuredImageUploadMutation.isPending}
+                uploaded={featuredImageUploadMutation.isSuccess}
+                uploadError={featuredImageUploadError}
+              />
+            </CardContent>
+          </Card>
+
+          {currentSlug ? <AssignmentPanel slug={currentSlug} /> : null}
+          {currentSlug ? <EditorialCommentsPanel slug={currentSlug} /> : null}
+          {currentSlug ? <RevisionHistoryPanel slug={currentSlug} /> : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Engagement</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {(
+                [
+                  ['allow_comments', 'Allow comments'],
+                  ['allow_reactions', 'Allow reactions'],
+                  ['allow_sharing', 'Allow sharing'],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <Label htmlFor={key}>{label}</Label>
+                  <Switch
+                    id={key}
+                    checked={form.article[key] ?? true}
+                    onCheckedChange={(checked) => setForm({ ...form, article: { ...form.article, [key]: checked } })}
                   />
                 </div>
-                <Button type="button" onClick={handlePublish} loading={publishMutation.isPending}>
-                  {scheduledAt ? 'Schedule' : 'Publish now'}
+              ))}
+            </CardContent>
+          </Card>
+
+          <SeoDetailsPanel
+            input={seoInput}
+            editor={editor}
+            focusKeyword={form.article.focus_keyword ?? ''}
+            onFocusKeywordChange={(value) => setForm({ ...form, article: { ...form.article, focus_keyword: value } })}
+            metaKeywords={form.article.meta_keywords ?? ''}
+            onMetaKeywordsChange={(value) => setForm({ ...form, article: { ...form.article, meta_keywords: value } })}
+            featuredImageAlt={form.article.featured_image_alt ?? ''}
+            onFeaturedImageAltChange={(value) =>
+              setForm({ ...form, article: { ...form.article, featured_image_alt: value } })
+            }
+            slugValue={slugValue}
+            onSlugChange={setSlugValue}
+            slugEditable={Boolean(currentSlug)}
+          />
+
+          {currentSlug && isDraft ? (
+            <>
+              <PublishChecklist
+                input={{
+                  title: form.title,
+                  slug: slugValue,
+                  excerpt: form.article.excerpt,
+                  bodyHtml: form.article.body,
+                  focusKeyword: form.article.focus_keyword,
+                  seoTitle: form.article.seo_title,
+                  seoDescription: form.article.seo_description,
+                  canonicalUrl: form.article.canonical_url,
+                  featuredImageUrl: form.article.featured_image_url,
+                  featuredImageAlt: form.article.featured_image_alt,
+                  categoryId: form.category_id,
+                  tags: previewTags,
+                  siteOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+                }}
+                isAdmin={isAdmin}
+                override={checklistOverride}
+                onOverrideChange={setChecklistOverride}
+              />
+              <Card>
+                <CardHeader>
+                  <CardTitle>Publish</CardTitle>
+                  <CardDescription>Publish immediately, or schedule a future publish time.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="scheduled-at">Schedule for (optional)</Label>
+                    <Input
+                      id="scheduled-at"
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(event) => setScheduledAt(event.target.value)}
+                    />
+                  </div>
+                  <Button type="button" onClick={handlePublish} loading={publishMutation.isPending}>
+                    {scheduledAt ? 'Schedule' : 'Publish now'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
+
+          {currentSlug && resource && !isDraft && resource.status !== 'archived' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Archive</CardTitle>
+                <CardDescription>Pulls this article out of public view without deleting it.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button type="button" variant="outline" onClick={handleArchive} loading={archiveMutation.isPending}>
+                  Archive
                 </Button>
               </CardContent>
             </Card>
-          </>
-        ) : null}
+          ) : null}
 
-        {currentSlug && resource && !isDraft && resource.status !== 'archived' ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Archive</CardTitle>
-              <CardDescription>Pulls this article out of public view without deleting it.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button type="button" variant="outline" onClick={handleArchive} loading={archiveMutation.isPending}>
-                Archive
-              </Button>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => router.push(ROUTES.adminContentArticles)}>
-            Cancel
-          </Button>
-          <Button type="submit" loading={isSaving}>
-            {isEditing ? 'Save changes' : 'Save draft'}
-          </Button>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => router.push(ROUTES.adminContentArticles)}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={isSaving}>
+              {isEditing ? 'Save changes' : 'Save draft'}
+            </Button>
+          </div>
         </div>
       </form>
     </PageContainer>

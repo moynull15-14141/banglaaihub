@@ -43,7 +43,7 @@ export function ArticleDetailView({ slug }: ArticleDetailViewProps) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
 
   return (
-    <PageContainer className="max-w-3xl">
+    <PageContainer className="max-w-[968px]">
       <ArticleJsonLd resource={resource} />
       <Breadcrumb items={[{ label: 'Articles', href: ROUTES.articles }, { label: resource.title }]} />
 
