@@ -9,6 +9,7 @@ import { FeedSettingsService } from '../services/feed-settings.service';
 import { FollowService } from '../services/follow.service';
 import { PlatformSettingsService } from '../services/platform-settings.service';
 import { ReportService } from '../services/report.service';
+import { ResourcePurchaseService } from '../services/resourcePurchase.service';
 import { ResourceService } from '../services/resources.service';
 import { SearchService } from '../services/search.service';
 import { UserSearchService } from '../services/user-search.service';
@@ -492,4 +493,34 @@ export async function rebuildSearchIndex(_req: Request, res: Response): Promise<
     UserSearchService.rebuildIndex(),
   ]);
   sendSuccess(res, { resources_indexed: resources.count, users_indexed: users.count });
+}
+
+// Paid Resource Downloads (Phase A) — support/manual-override tool: grants a
+// buyer access to a priced resource and credits the author's wallet without
+// a real gateway transaction (e.g. "buyer paid the author directly", or —
+// this phase only — testing the gate/ledger path before Phase B's real
+// SSLCommerz integration exists). system:configure-gated (super_admin only).
+export async function manuallyGrantResourcePurchase(req: Request, res: Response): Promise<void> {
+  const actor = requireUser(req);
+  const { resource_id, buyer_id } = req.body as { resource_id?: string; buyer_id?: string };
+  if (!resource_id || !buyer_id) {
+    throw new ApiError(400, 'VALIDATION_ERROR', 'resource_id and buyer_id are required.');
+  }
+  await ResourcePurchaseService.grantManually(resource_id, buyer_id, actor.userId);
+  sendSuccess(res, { message: 'Purchase granted manually.' });
+}
+
+// GET /admin/resource-purchases — every sale, for super_admin financial
+// oversight (which resource, which buyer, when, how much, the exact 90/10
+// split). system:configure-gated, same as every other financial admin
+// action in this file.
+export async function listResourcePurchases(req: Request, res: Response): Promise<void> {
+  const status = req.query.status as 'pending' | 'completed' | 'failed' | 'cancelled' | undefined;
+  const result = await ResourcePurchaseService.listForAdmin(status);
+  sendSuccess(res, result);
+}
+
+export async function getRevenueSummary(_req: Request, res: Response): Promise<void> {
+  const result = await ResourcePurchaseService.getRevenueSummary();
+  sendSuccess(res, result);
 }

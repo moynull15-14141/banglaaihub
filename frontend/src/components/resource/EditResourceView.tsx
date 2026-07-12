@@ -109,6 +109,12 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
   // guard already in place.
   const [modelFile, setModelFile] = useState<File | null>(null);
   const [modelUploadError, setModelUploadError] = useState<string | null>(null);
+  // Paid Resource Downloads — tracked as human-readable amount text (not
+  // price_cents directly) so the input can hold "9.99" while typing;
+  // converted to an integer price_cents only at submit time.
+  const [isFree, setIsFree] = useState(true);
+  const [priceAmount, setPriceAmount] = useState('');
+  const [priceCurrency, setPriceCurrency] = useState<'BDT' | 'USD'>('BDT');
 
   if (resource && !initialized) {
     setForm({
@@ -123,6 +129,9 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
     });
     setInitialThumbnailUrl(resource.thumbnail_url ?? '');
     setTagsText(resource.tags.join(', '));
+    setIsFree(!resource.price_cents);
+    setPriceAmount(resource.price_cents ? (resource.price_cents / 100).toString() : '');
+    setPriceCurrency(resource.currency ?? 'BDT');
     if (resource.dataset) {
       setDataset({
         version: resource.dataset.version,
@@ -221,6 +230,8 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
       // resending an untouched, possibly-signed URL would be wrong.
       thumbnail_url:
         form.thumbnail_url !== initialThumbnailUrl ? form.thumbnail_url?.trim() || undefined : undefined,
+      price_cents: isFree ? 0 : Math.round(parseFloat(priceAmount || '0') * 100),
+      currency: isFree ? undefined : priceCurrency,
       tags,
       dataset: resource.type === 'dataset' ? dataset : undefined,
       // Only send pdf_url if the user actually changed it — see
@@ -411,6 +422,64 @@ export function EditResourceView({ slug }: EditResourceViewProps) {
                   placeholder="CC-BY-4.0, MIT…"
                 />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Price</Label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFree(true)}
+                  className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    isFree
+                      ? 'border-brand bg-brand/10 text-brand'
+                      : 'border-border text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  Free
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFree(false)}
+                  className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    !isFree
+                      ? 'border-brand bg-brand/10 text-brand'
+                      : 'border-border text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  Paid
+                </button>
+              </div>
+              {!isFree ? (
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={priceAmount}
+                    onChange={(event) => setPriceAmount(event.target.value)}
+                    placeholder="Amount"
+                    className="max-w-40"
+                  />
+                  <div className="flex gap-1">
+                    {(['BDT', 'USD'] as const).map((currency) => (
+                      <button
+                        key={currency}
+                        type="button"
+                        onClick={() => setPriceCurrency(currency)}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          priceCurrency === currency
+                            ? 'border-brand bg-brand/10 text-brand'
+                            : 'border-border text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        {currency}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Anyone can download this resource for free.</p>
+              )}
             </div>
             <ThumbnailUrlInput
               id="thumbnail-url"

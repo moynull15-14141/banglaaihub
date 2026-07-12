@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { LikeService } from '../services/like.service';
 import { ReportService } from '../services/report.service';
+import { ResourcePurchaseService } from '../services/resourcePurchase.service';
 import { ResourceService } from '../services/resources.service';
 import { UserService } from '../services/users.service';
 import { ApiError } from '../utils/ApiError';
@@ -90,6 +91,11 @@ export async function uploadFile(req: Request, res: Response): Promise<void> {
   sendSuccess(res, result);
 }
 
+export async function preview(req: Request, res: Response): Promise<void> {
+  const result = await ResourceService.getPreview(requireParam(req, 'slug'), req.user);
+  sendSuccess(res, result);
+}
+
 export async function download(req: Request, res: Response): Promise<void> {
   const query = (req.validatedQuery ?? {}) as GetDownloadUrlQuery;
   const result = await ResourceService.getDownloadUrl(requireParam(req, 'slug'), req.user, query.file_id);
@@ -105,6 +111,25 @@ export async function confirmDownload(req: Request, res: Response): Promise<void
 export async function share(req: Request, res: Response): Promise<void> {
   await ResourceService.logShare(requireParam(req, 'slug'), req.user);
   sendSuccess(res, { message: 'Share recorded.' });
+}
+
+// POST /resources/:slug/purchase — opens an SSLCommerz session for a priced
+// resource. success/fail/cancel/ipn URLs point back at THIS backend
+// (never the frontend directly — SSLCommerz POSTs to success/fail/cancel,
+// which Next.js pages can't receive; see payments.controller.ts for the
+// redirect-on-to-the-frontend-result-page handling).
+export async function purchase(req: Request, res: Response): Promise<void> {
+  const user = requireUser(req);
+  const slug = requireParam(req, 'slug');
+  const backendBase = `${req.protocol}://${req.get('host')}/api/v1`;
+
+  const result = await ResourcePurchaseService.initiateCheckout(slug, user.userId, {
+    successUrl: `${backendBase}/payments/sslcommerz/success`,
+    failUrl: `${backendBase}/payments/sslcommerz/fail`,
+    cancelUrl: `${backendBase}/payments/sslcommerz/cancel`,
+    ipnUrl: `${backendBase}/payments/sslcommerz/ipn`,
+  });
+  sendSuccess(res, { gateway_url: result.gatewayPageUrl });
 }
 
 // Phase 5A-1 — Content Platform: publish/schedule/archive an article.

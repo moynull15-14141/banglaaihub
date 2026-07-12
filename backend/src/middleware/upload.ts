@@ -12,6 +12,8 @@ import {
   DATASET_ALLOWED_EXTENSIONS,
   DATASET_MAX_FILE_SIZE,
   DOCUMENTATION_ALLOWED_EXTENSIONS,
+  FONT_ALLOWED_EXTENSIONS,
+  FONT_MAX_FILE_SIZE,
   MODEL_ALLOWED_EXTENSIONS,
   MODEL_MAX_FILE_SIZE,
   PAPER_PDF_ALLOWED_EXTENSIONS,
@@ -102,3 +104,11 @@ export const feedAnnouncementImageUpload = createUploadMiddleware(
 // POST /posts — optional image attached in the same multipart request as
 // the post's text content.
 export const postImageUpload = createUploadMiddleware(THUMBNAIL_ALLOWED_EXTENSIONS, THUMBNAIL_MAX_FILE_SIZE);
+
+// POST /site-settings/fonts/:slot/upload — Site Font Engine custom font
+// weight/style file upload.
+export const fontUpload = createUploadMiddleware(FONT_ALLOWED_EXTENSIONS, FONT_MAX_FILE_SIZE);
+
+// POST /site-settings/stat-cards/:slot — homepage stat-card hero image
+// upload, same allow-list/size cap as resource thumbnails.
+export const statCardImageUpload = createUploadMiddleware(THUMBNAIL_ALLOWED_EXTENSIONS, THUMBNAIL_MAX_FILE_SIZE);

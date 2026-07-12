@@ -31,7 +31,7 @@ import { useToggleResourceLike } from '@/lib/hooks/useLikes';
 import { useReportResource, useResource, useToggleResourceBookmark } from '@/lib/hooks/useResources';
 import { ROUTES, resourceHref } from '@/lib/constants/routes';
 import { RESOURCE_TYPE_LABELS } from '@/lib/constants/resourceTypes';
-import { formatDate } from '@/lib/utils/format';
+import { formatDate, formatPrice } from '@/lib/utils/format';
 import type { ReportReason } from '@/lib/api/resources';
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -47,7 +47,7 @@ interface ResourceDetailViewProps {
 
 export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { data: resource, isLoading, isError, error, refetch } = useResource(slug);
   const toggleBookmarkMutation = useToggleResourceBookmark(slug);
   const toggleLikeMutation = useToggleResourceLike(slug);
@@ -127,6 +127,7 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
   if (!resource) return null;
 
   const authorName = resource.author?.display_name ?? resource.author?.username ?? null;
+  const isOwner = Boolean(user && resource.author?.id === user.id);
 
   return (
     <PageContainer className="max-w-4xl space-y-6">
@@ -145,6 +146,13 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
             <Badge variant="secondary">{resource.category.name}</Badge>
           ) : null}
           {resource.featured ? <Badge variant="warning">Featured</Badge> : null}
+          {resource.price_cents && resource.currency ? (
+            <Badge variant="brand">
+              {resource.is_purchased || isOwner ? 'Purchased' : formatPrice(resource.price_cents, resource.currency)}
+            </Badge>
+          ) : (
+            <Badge variant="success">Free</Badge>
+          )}
         </div>
         <h1 className="font-heading text-3xl font-bold tracking-tight">{resource.title}</h1>
         <ResourceMeta
@@ -231,7 +239,14 @@ export function ResourceDetailView({ slug }: ResourceDetailViewProps) {
 
       <VersionHistorySection resource={resource} />
 
-      <AttachmentsSection slug={resource.slug} attachments={resource.attachments} />
+      <AttachmentsSection
+        slug={resource.slug}
+        attachments={resource.attachments}
+        priceCents={resource.price_cents}
+        currency={resource.currency}
+        isPurchased={resource.is_purchased}
+        isOwner={isOwner}
+      />
 
       <CitationBlock
         title={resource.title}

@@ -48,6 +48,8 @@ export const STORAGE_FOLDERS = {
   feedAnnouncements: 'feed-announcements',
   posts: 'posts',
   articles: 'articles',
+  fonts: 'fonts',
+  statCards: 'stat-cards',
 } as const;
 
 export type StorageFolder = (typeof STORAGE_FOLDERS)[keyof typeof STORAGE_FOLDERS];
@@ -105,6 +107,12 @@ const EXTENSION_CATALOG: Record<string, ExtensionSpec> = {
   '.safetensors': { mimeTypes: ['application/octet-stream'], sniffable: false },
   '.pt': { mimeTypes: ['application/octet-stream'], sniffable: false },
   '.bin': { mimeTypes: ['application/octet-stream'], sniffable: false },
+
+  // Font files (Site Font Engine custom uploads).
+  '.woff2': { mimeTypes: ['font/woff2'], sniffable: true },
+  '.woff': { mimeTypes: ['font/woff'], sniffable: true },
+  '.ttf': { mimeTypes: ['font/ttf', 'font/sfnt'], sniffable: true },
+  '.otf': { mimeTypes: ['font/otf', 'font/sfnt'], sniffable: true },
 };
 
 // Rejected everywhere, regardless of the caller's allow-list — executables,
@@ -150,6 +158,10 @@ export const MODEL_MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 
 export const THUMBNAIL_ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
 export const THUMBNAIL_MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+// Site Font Engine custom font uploads — one file per weight/style.
+export const FONT_ALLOWED_EXTENSIONS = ['.woff2', '.woff', '.ttf', '.otf'];
+export const FONT_MAX_FILE_SIZE = 2 * 1024 * 1024;
 
 export const DOCUMENT_ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.md'];
 export const DOCUMENT_MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -396,6 +408,28 @@ export class StorageService {
     return r2PublicUrl ? `${r2PublicUrl}/${key}` : null;
   }
 
+  // Paid Resource Downloads checkout preview — fetches only the first
+  // `maxBytes` of a text-based object via an R2 Range request (never the
+  // whole file, so a multi-hundred-MB dataset can't be pulled through the
+  // server just to show a snippet). Returns null on any failure (missing
+  // key, not configured, etc.) — preview is a nice-to-have, never something
+  // that should break the checkout page if it can't be produced.
+  static async getObjectPreviewText(key: string, maxBytes: number): Promise<string | null> {
+    if (!r2BucketName) return null;
+
+    try {
+      const response = await r2Client.send(
+        new GetObjectCommand({ Bucket: r2BucketName, Key: key, Range: `bytes=0-${maxBytes - 1}` }),
+      );
+      const bytes = await response.Body?.transformToByteArray();
+      if (!bytes) return null;
+      return Buffer.from(bytes).toString('utf-8');
+    } catch (error) {
+      logger.warn('R2 preview fetch failed', { key, error: error instanceof Error ? error.message : error });
+      return null;
+    }
+  }
+
   // `downloadFilename`, when given, sets ResponseContentDisposition on the
   // presigned URL itself — R2 (like S3) honors this as a real response
   // header, so the browser downloads with the right filename and forces a
@@ -535,6 +569,20 @@ export class StorageService {
     return { key: metadata.key, checksum: metadata.checksum };
   }
 
+  // Site Font Engine custom uploads — one file per (weight, style), keyed
+  // under the SiteFont row's own id so every weight of the same family lives
+  // together in R2.
+  static async uploadFontFile(fontId: string, file: UploadedFile): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.uploadObject(
+      STORAGE_FOLDERS.fonts,
+      fontId,
+      file,
+      FONT_ALLOWED_EXTENSIONS,
+      FONT_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
+  }
+
   // Feed announcement banner image (Phase 4D) — same allow-list/size cap as
   // resource thumbnails, own folder for storage-cost bookkeeping. Replaces
   // (not just uploads) so editing an announcement's image cleans up the old
@@ -548,6 +596,25 @@ export class StorageService {
       previousKey,
       STORAGE_FOLDERS.feedAnnouncements,
       announcementId,
+      file,
+      THUMBNAIL_ALLOWED_EXTENSIONS,
+      THUMBNAIL_MAX_FILE_SIZE,
+    );
+    return { key: metadata.key, checksum: metadata.checksum };
+  }
+
+  // Homepage stat-card hero image (one per ResourceType slot) — same
+  // allow-list/size cap and replace-on-upload pattern as
+  // uploadFeedAnnouncementImage() above.
+  static async uploadStatCardImage(
+    slot: string,
+    previousKey: string | null | undefined,
+    file: UploadedFile,
+  ): Promise<{ key: string; checksum: string }> {
+    const metadata = await StorageService.replaceObject(
+      previousKey,
+      STORAGE_FOLDERS.statCards,
+      slot,
       file,
       THUMBNAIL_ALLOWED_EXTENSIONS,
       THUMBNAIL_MAX_FILE_SIZE,

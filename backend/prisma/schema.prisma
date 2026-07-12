@@ -189,6 +189,14 @@ enum NotificationType {
   article_approved
   article_published
   article_scheduled
+  // Paid Resource Downloads — payment_received/purchase_completed fire on
+  // ResourcePurchaseService.markCompleted() (author and buyer respectively);
+  // the payout_* ones fire on PayoutService's approve/reject/markPaid.
+  payment_received
+  purchase_completed
+  payout_approved
+  payout_rejected
+  payout_paid
 
   @@map("notification_type")
 }
@@ -371,6 +379,13 @@ model User {
   editorialCommentsResolved       ArticleEditorialComment[] @relation("ArticleEditorialCommentResolvedBy")
   articleLocksHeld                ArticleLock[]
   articleRevisionsEdited          ArticleRevision[]
+  siteFontsUpdated                SiteFont[]
+  statCardImagesUpdated           StatCardImage[]
+  resourcePurchases                ResourcePurchase[]  @relation("ResourcePurchaseBuyer")
+  walletLedgerEntries              WalletLedgerEntry[]
+  walletBalances                   WalletBalance[]
+  payoutRequests                   PayoutRequest[]      @relation("PayoutRequestUser")
+  payoutRequestsReviewed           PayoutRequest[]      @relation("PayoutRequestReviewer")
 
   @@index([deletedAt], map: "idx_users_deleted")
   @@map("users")
@@ -464,6 +479,11 @@ model Resource {
   reviewCount      Int            @default(0) @map("review_count")
   likeCount        Int            @default(0) @map("like_count")
   featured         Boolean        @default(false)
+  // Paid Resource Downloads — null price = free (today's behavior,
+  // unchanged for every existing row). currency is only ever set alongside
+  // a non-null priceCents.
+  priceCents       Int?           @map("price_cents")
+  currency         Currency?
   approvedBy       String?        @map("approved_by") @db.Uuid
   approvedAt       DateTime?      @map("approved_at") @db.Timestamptz(6)
   publishedAt      DateTime?      @map("published_at") @db.Timestamptz(6)
@@ -497,6 +517,7 @@ model Resource {
   articleEditorialComments ArticleEditorialComment[]
   articleLock              ArticleLock?
   articleRevisions         ArticleRevision[]
+  purchases                ResourcePurchase[]
 
   @@index([status], map: "idx_resources_status")
   @@index([type], map: "idx_resources_type")
@@ -1422,4 +1443,227 @@ model UserBlock {
   @@unique([blockerId, blockedId])
   @@index([blockedId])
   @@map("user_blocks")
+}
+
+// ---------------------------------------------------------------------------
+// Site Font Engine — admin-controlled sitewide typography (3 slots: sans/
+// heading/mono). Google-source rows have no SiteFontFile children (weights
+// are just query params on the generated Google Fonts CSS2 URL); custom
+// uploads store one row per weight/style so a family can have a real bold
+// without needing browser-side font-synthesis.
+// ---------------------------------------------------------------------------
+
+enum FontSlot {
+  sans
+  heading
+  mono
+
+  @@map("font_slot")
+}
+
+enum FontSource {
+  google
+  custom
+
+  @@map("font_source")
+}
+
+enum FontStyle {
+  normal
+  italic
+
+  @@map("font_style")
+}
+
+model SiteFont {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slot        FontSlot   @unique
+  source      FontSource
+  // google: must match a googleFontsCatalog.ts entry's `family` exactly.
+  // custom: admin-chosen display name, sanitized to /^[a-zA-Z0-9 _-]{1,60}$/.
+  family      String
+  fallback    String     @default("ui-sans-serif, system-ui, sans-serif")
+  updatedById String     @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedBy User           @relation(fields: [updatedById], references: [id], onDelete: Cascade)
+  files     SiteFontFile[]
+
+  @@map("site_fonts")
+}
+
+model SiteFontFile {
+  id       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fontId   String    @map("font_id") @db.Uuid
+  weight   Int
+  style    FontStyle @default(normal)
+  fileKey  String    @map("file_key")
+  format   String
+
+  font SiteFont @relation(fields: [fontId], references: [id], onDelete: Cascade)
+
+  @@unique([fontId, weight, style])
+  @@map("site_font_files")
+}
+
+// ---------------------------------------------------------------------------
+// Homepage stat card hero images — one optional image per ResourceType,
+// shown behind the "Community statistics" card for that type. A slot with
+// no row means "no hero image set", and the frontend falls back to a plain
+// icon card — fully additive/non-breaking, same optionality as SiteFont.
+// ---------------------------------------------------------------------------
+
+enum StatCardSlot {
+  dataset
+  paper
+  tool
+  model
+  article
+  tutorial
+  prompt
+  project
+  news
+
+  @@map("stat_card_slot")
+}
+
+model StatCardImage {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slot        StatCardSlot @unique
+  imageKey    String       @map("image_key")
+  updatedById String       @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedBy User @relation(fields: [updatedById], references: [id], onDelete: Cascade)
+
+  @@map("stat_card_images")
+}
+
+// ---------------------------------------------------------------------------
+// Paid Resource Downloads — pricing, purchases, wallet, payouts. Phase A:
+// schema + pricing + gate + ledger plumbing, no real gateway yet (Phase B).
+// ---------------------------------------------------------------------------
+
+enum Currency {
+  BDT
+  USD
+
+  @@map("currency")
+}
+
+enum PurchaseStatus {
+  pending
+  completed
+  failed
+  cancelled
+
+  @@map("purchase_status")
+}
+
+enum PayoutMethod {
+  bkash
+  nagad
+  rocket
+  bank_transfer
+
+  @@map("payout_method")
+}
+
+enum PayoutStatus {
+  pending
+  approved
+  rejected
+  paid
+
+  @@map("payout_status")
+}
+
+enum WalletEntryType {
+  sale_earning
+  withdrawal
+  adjustment
+
+  @@map("wallet_entry_type")
+}
+
+// One row per (resource, buyer) purchase attempt — a failed/cancelled one
+// can be retried, which is why the uniqueness is per-status rather than a
+// flat [resourceId, buyerId] unique (that would block a retry after a
+// failed payment).
+model ResourcePurchase {
+  id                   String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceId           String         @map("resource_id") @db.Uuid
+  buyerId              String         @map("buyer_id") @db.Uuid
+  amountCents          Int            @map("amount_cents")
+  currency             Currency
+  platformFeeCents     Int            @map("platform_fee_cents")
+  authorEarningsCents  Int            @map("author_earnings_cents")
+  status               PurchaseStatus @default(pending)
+  gatewayName          String         @default("sslcommerz") @map("gateway_name")
+  gatewayTransactionId String?        @unique @map("gateway_transaction_id")
+  paidAt               DateTime?      @map("paid_at") @db.Timestamptz(6)
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  buyer    User     @relation("ResourcePurchaseBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, buyerId, status])
+  @@index([buyerId], map: "idx_resource_purchases_buyer")
+  @@map("resource_purchases")
+}
+
+// Append-only history — WalletBalance is the fast-read cache kept in sync
+// inside the same transaction as every insert here, same "cache + ledger"
+// convention as User.reputationScore + ReputationEvent.
+model WalletLedgerEntry {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  currency           Currency
+  type               WalletEntryType
+  amountCents        Int             @map("amount_cents")
+  balanceAfterCents  Int             @map("balance_after_cents")
+  relatedPurchaseId  String?         @map("related_purchase_id") @db.Uuid
+  relatedPayoutId    String?         @map("related_payout_id") @db.Uuid
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, currency], map: "idx_wallet_ledger_user_currency")
+  @@map("wallet_ledger_entries")
+}
+
+model WalletBalance {
+  userId       String   @map("user_id") @db.Uuid
+  currency     Currency
+  balanceCents Int      @default(0) @map("balance_cents")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, currency])
+  @@map("wallet_balances")
+}
+
+model PayoutRequest {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String       @map("user_id") @db.Uuid
+  amountCents   Int          @map("amount_cents")
+  currency      Currency
+  method        PayoutMethod
+  destination   String
+  status        PayoutStatus @default(pending)
+  reviewerId    String?      @map("reviewer_id") @db.Uuid
+  reviewedAt    DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  reviewNotes   String?      @map("review_notes")
+  paidReference String?      @map("paid_reference")
+  paidAt        DateTime?    @map("paid_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User  @relation("PayoutRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("PayoutRequestReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([userId], map: "idx_payout_requests_user")
+  @@map("payout_requests")
 }

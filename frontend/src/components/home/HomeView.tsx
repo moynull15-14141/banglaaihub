@@ -1,16 +1,17 @@
 'use client';
 
-import { Database, FileText, Folder, Wrench } from 'lucide-react';
 import { CallToAction } from '@/components/home/CallToAction';
 import { Hero } from '@/components/home/Hero';
+import { HomeStatCard } from '@/components/home/HomeStatCard';
 import { CategoryCard } from '@/components/resource/CategoryCard';
 import { ResourceGrid } from '@/components/resource/ResourceGrid';
 import { PageContainer } from '@/components/common/PageContainer';
 import { SectionHeader } from '@/components/common/SectionHeader';
-import { StatCard } from '@/components/common/StatCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCategories } from '@/lib/hooks/useCategories';
-import { useResources } from '@/lib/hooks/useResources';
+import { useResources, useResourceTypeCounts } from '@/lib/hooks/useResources';
+import { useStatCardImages } from '@/lib/hooks/useStatCardImages';
+import { STAT_CARD_ICONS, STAT_CARD_LABELS, STAT_CARD_ROUTES, STAT_CARD_TYPES } from '@/lib/constants/resourceTypes';
 import { ROUTES } from '@/lib/constants/routes';
 
 export function HomeView() {
@@ -22,10 +23,8 @@ export function HomeView() {
   // "Community statistics" is sourced entirely from meta.total on the already-
   // public /resources endpoint (no admin-only aggregate endpoint is used) —
   // see the Phase 9 report for why a new public stats endpoint wasn't added.
-  const totalResources = useResources({ limit: 1 });
-  const totalDatasets = useResources({ type: 'dataset', limit: 1 });
-  const totalPapers = useResources({ type: 'paper', limit: 1 });
-  const totalTools = useResources({ type: 'tool', limit: 1 });
+  const { counts, isLoading: countsLoading } = useResourceTypeCounts();
+  const { data: statCardImages } = useStatCardImages();
 
   return (
     <div>
@@ -33,22 +32,19 @@ export function HomeView() {
 
       <PageContainer className="py-12">
         <SectionHeader title="Community statistics" />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {totalResources.isLoading ? (
-            <>
-              <Skeleton className="h-24" />
-              <Skeleton className="h-24" />
-              <Skeleton className="h-24" />
-              <Skeleton className="h-24" />
-            </>
-          ) : (
-            <>
-              <StatCard icon={Folder} label="Resources" value={totalResources.data?.meta.total ?? 0} />
-              <StatCard icon={Database} label="Datasets" value={totalDatasets.data?.meta.total ?? 0} />
-              <StatCard icon={FileText} label="Papers" value={totalPapers.data?.meta.total ?? 0} />
-              <StatCard icon={Wrench} label="Tools" value={totalTools.data?.meta.total ?? 0} />
-            </>
-          )}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {countsLoading
+            ? STAT_CARD_TYPES.map((type) => <Skeleton key={type} className="h-28 sm:h-32" />)
+            : STAT_CARD_TYPES.map((type) => (
+                <HomeStatCard
+                  key={type}
+                  icon={STAT_CARD_ICONS[type]}
+                  label={STAT_CARD_LABELS[type]}
+                  value={counts[type]}
+                  href={STAT_CARD_ROUTES[type]}
+                  imageUrl={statCardImages?.find((image) => image.slot === type)?.url ?? null}
+                />
+              ))}
         </div>
       </PageContainer>
 

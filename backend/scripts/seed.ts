@@ -66,6 +66,10 @@ const PERMISSIONS: Record<string, string> = {
   // content:edit/content:publish, which already existed.
   'content:review': 'Review submitted articles (approve to SEO review or request changes)',
   'content:seo_review': 'Perform SEO review on articles (approve to publish-ready or request changes)',
+  // Paid Resource Downloads (Phase A) — real-money approval, kept at the
+  // same admin tier as resource:delete_any/content:delete above, not
+  // editor, since it moves wallet balances.
+  'payout:manage': 'Approve, reject, or mark payout requests as paid',
 };
 
 // Cumulative permission set per role, per doc 13's permissions matrix.
@@ -123,6 +127,7 @@ const ROLE_PERMISSIONS: Record<(typeof ROLES)[number], string[]> = {
     'system:audit_log_view',
     'resource:delete_any',
     'content:delete',
+    'payout:manage',
   ],
   super_admin: ['admin:manage', 'system:configure'],
 };

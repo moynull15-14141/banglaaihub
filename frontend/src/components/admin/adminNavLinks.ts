@@ -3,15 +3,20 @@ import {
   CalendarClock,
   CalendarDays,
   ClipboardList,
+  CreditCard,
   FileText,
   Flag,
   FolderTree,
+  Image,
   LayoutDashboard,
+  Receipt,
   Rss,
   Search,
   Sparkles,
   TrendingUp,
+  Type,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { ROUTES } from '@/lib/constants/routes';
 import type { RoleName } from '@/lib/constants/roles';
@@ -52,6 +57,22 @@ export const ADMIN_NAV_LINKS: {
     roles: ['editor', 'admin', 'super_admin'],
   },
   { href: ROUTES.adminUsers, label: 'Users', icon: Users, roles: ['admin', 'super_admin'] },
+  {
+    href: ROUTES.adminPayouts,
+    label: 'Payouts',
+    icon: Wallet,
+    // payout:manage-gated (see backend/scripts/seed.ts) — admin/super_admin,
+    // same tier as Users/Badges above (moves wallet balances).
+    roles: ['admin', 'super_admin'],
+  },
+  {
+    href: ROUTES.adminTransactions,
+    label: 'Transactions',
+    icon: Receipt,
+    // system:configure-gated (super_admin only) — full platform revenue
+    // (10% cut per sale) visibility, same tier as Dashboard/Categories.
+    roles: ['super_admin'],
+  },
   { href: ROUTES.adminBadges, label: 'Badges', icon: Award, roles: ['admin', 'super_admin'] },
   {
     href: ROUTES.adminCategories,
@@ -122,6 +143,29 @@ export const ADMIN_NAV_LINKS: {
     label: 'Schedule Queue',
     icon: CalendarClock,
     roles: ['editor', 'admin', 'super_admin', 'publisher'],
+  },
+  {
+    href: ROUTES.adminSettingsFonts,
+    label: 'Typography',
+    icon: Type,
+    // system:configure-gated (super_admin only, see backend/scripts/seed.ts)
+    // — sitewide infrastructure, same tier as Dashboard/Categories above.
+    roles: ['super_admin'],
+  },
+  {
+    href: ROUTES.adminSettingsStatCards,
+    label: 'Stat Card Images',
+    icon: Image,
+    // system:configure-gated, same tier as Typography above.
+    roles: ['super_admin'],
+  },
+  {
+    href: ROUTES.adminSettingsPayments,
+    label: 'Payments',
+    icon: CreditCard,
+    // system:configure-gated — SSLCommerz credentials, same tier as
+    // Typography/Stat Card Images above.
+    roles: ['super_admin'],
   },
 ];
 

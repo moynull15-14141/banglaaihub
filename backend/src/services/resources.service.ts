@@ -16,6 +16,7 @@ import { EmailService } from './email.service';
 import { NotificationService } from './notification.service';
 import { PlatformSettingsService } from './platform-settings.service';
 import { ReputationService } from './reputation.service';
+import { ResourcePurchaseService } from './resourcePurchase.service';
 import { computeTrendingScores } from './scoring/trending';
 import { SearchService } from './search.service';
 import { SeoService } from './seo.service';
@@ -49,6 +50,13 @@ type CategoryRow = Prisma.CategoryGetPayload<Record<string, never>>;
 type TagRow = Prisma.TagGetPayload<Record<string, never>>;
 
 const MODERATION_PERMISSIONS = ['resource:approve', 'resource:edit_any'];
+
+// Checkout-page content preview (Paid Resource Downloads) — only these
+// extensions are read as text; anything else (pdf, zip, images, model
+// weights) gets no content preview.
+const PREVIEW_TEXT_EXTENSIONS = new Set(['.csv', '.txt', '.json', '.md']);
+const PREVIEW_FRACTION = 0.3; // "30%", per the brief.
+const PREVIEW_MAX_BYTES = 4000; // hard cap regardless of file size.
 
 // Doc 14's Reputation Formula Details table — the more detailed, dedicated
 // spec (also matches the tiers already shipped in ReputationBadge.tsx),
@@ -188,6 +196,8 @@ export async function toResourceDto(resource: ResourceWithRelations): Promise<Re
     visibility: resource.visibility,
     language: resource.language,
     license: resource.license,
+    price_cents: resource.priceCents,
+    currency: resource.currency,
     external_url: resource.externalUrl,
     // Articles have no dedicated thumbnail field/UI (see ArticleEditorView's
     // "Featured image", which only writes article.featured_image_url) — fall
@@ -592,6 +602,32 @@ export class ResourceService {
     }
   }
 
+  // Paid Resource Downloads — called right after assertCanView() in both
+  // download entry points below. A resource with no priceCents is free for
+  // everyone, exactly today's behavior. A priced resource requires: (1) a
+  // real requester (401, not the route's default authenticateOptional —
+  // the frontend turns this into a login redirect), (2) unless they're the
+  // author/a moderator, a completed ResourcePurchase (402 PAYMENT_REQUIRED
+  // otherwise, which the frontend turns into a checkout redirect).
+  private static async assertCanDownload(
+    resource: { id: string; authorId: string | null; priceCents: number | null },
+    requester?: AccessTokenPayload,
+  ): Promise<void> {
+    if (!resource.priceCents) return;
+
+    if (!requester) {
+      throw new ApiError(401, 'UNAUTHORIZED', 'Sign in to download this resource.');
+    }
+    if (requester.userId === resource.authorId) return;
+
+    const permissions = await AuthService.getUserPermissions(requester.userId);
+    if (MODERATION_PERMISSIONS.some((permission) => permissions.has(permission))) return;
+
+    if (!(await ResourcePurchaseService.hasPurchased(requester.userId, resource.id))) {
+      throw new ApiError(402, 'PAYMENT_REQUIRED', 'Purchase this resource to download it.');
+    }
+  }
+
   static async getBySlug(slug: string, requester?: AccessTokenPayload): Promise<unknown> {
     const resource = await prisma.resource.findUnique({
       where: { slug },
@@ -634,9 +670,79 @@ export class ResourceService {
         select: { id: true },
       });
       dto.is_liked = like !== null;
+
+      if (resource.priceCents) {
+        dto.is_purchased = await ResourcePurchaseService.hasPurchased(requester.userId, resource.id);
+      }
     }
 
     return dto;
+  }
+
+  // GET /resources/:slug/preview — a small, free, no-purchase-required
+  // content snippet for the checkout page ("show the buyer a taste before
+  // they pay"). Only ever reads the first slice of the file (via
+  // StorageService.getObjectPreviewText's Range request), and only for
+  // text-based formats — a PDF/zip/binary file has no meaningful "first N
+  // bytes as text" preview, so those get `available: false` instead of
+  // garbage output. This intentionally does NOT call assertCanDownload —
+  // that's the whole point of a pre-purchase preview.
+  static async getPreview(slug: string, requester?: AccessTokenPayload): Promise<{
+    available: boolean;
+    content: string | null;
+    truncated: boolean;
+  }> {
+    const resource = await prisma.resource.findUnique({
+      where: { slug },
+      include: { dataset: true, paper: true, tool: true, model: true, files: true },
+    });
+    if (!resource || resource.deletedAt) {
+      throw new ApiError(404, 'RESOURCE_NOT_FOUND', 'Resource not found.');
+    }
+    await this.assertCanView(resource, requester);
+
+    const key =
+      resource.type === 'dataset'
+        ? (resource.dataset?.fileUrl ?? null)
+        : resource.type === 'tool'
+          ? (resource.tool?.fileUrl ?? null)
+          : resource.type === 'model'
+            ? (resource.model?.fileUrl ?? null)
+            : (resource.files[0]?.storageKey ?? null);
+
+    const fileSizeBytes =
+      resource.type === 'dataset'
+        ? resource.dataset?.fileSizeBytes
+        : resource.type === 'tool'
+          ? resource.tool?.fileSizeBytes
+          : resource.type === 'model'
+            ? resource.model?.fileSizeBytes
+            : resource.files[0]?.sizeBytes;
+
+    if (!key || /^https?:\/\//i.test(key)) {
+      return { available: false, content: null, truncated: false };
+    }
+
+    const extension = path.extname(key).toLowerCase();
+    if (!PREVIEW_TEXT_EXTENSIONS.has(extension)) {
+      return { available: false, content: null, truncated: false };
+    }
+
+    const totalBytes = fileSizeBytes ? Number(fileSizeBytes) : null;
+    const targetBytes = totalBytes
+      ? Math.min(Math.ceil(totalBytes * PREVIEW_FRACTION), PREVIEW_MAX_BYTES)
+      : PREVIEW_MAX_BYTES;
+
+    const content = await StorageService.getObjectPreviewText(key, targetBytes);
+    if (content === null) {
+      return { available: false, content: null, truncated: false };
+    }
+
+    return {
+      available: true,
+      content,
+      truncated: totalBytes ? targetBytes < totalBytes : content.length >= PREVIEW_MAX_BYTES,
+    };
   }
 
   // GET /resources/:slug/download?file_id= — resolves either a specific
@@ -660,6 +766,7 @@ export class ResourceService {
     }
 
     await this.assertCanView(resource, requester);
+    await this.assertCanDownload(resource, requester);
 
     if (fileId) {
       const file = resource.files.find((f) => f.id === fileId);
@@ -722,6 +829,7 @@ export class ResourceService {
     // download_count and analytics via this endpoint alone, without ever
     // having been authorized to obtain a download URL for it.
     await this.assertCanView(resource, requester);
+    await this.assertCanDownload(resource, requester);
 
     // Awaited, not fire-and-forget — Phase 2A found that void'd counter
     // increments can be lost under process-exit pressure (Node cuts off
@@ -785,6 +893,12 @@ export class ResourceService {
       }
     }
 
+    // Paid Resource Downloads — price_cents and currency must be given
+    // together (0/omitted price_cents means free, no currency needed).
+    if (input.price_cents && !input.currency) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'currency is required when price_cents is set.');
+    }
+
     // Article-only permalink override (Phase 5A-2) — every other resource
     // type keeps deriving its slug from the title only, exactly as before.
     const baseSlug = slugify(input.type === 'article' && input.slug ? input.slug : input.title);
@@ -804,6 +918,8 @@ export class ResourceService {
           authorId,
           language: input.language ?? 'bn',
           license: input.license ?? null,
+          priceCents: input.price_cents || null,
+          currency: input.price_cents ? input.currency : null,
           externalUrl: input.external_url ?? null,
           thumbnailUrl: input.thumbnail_url ?? null,
           // Articles start as drafts, outside the community-moderation
@@ -1150,6 +1266,12 @@ export class ResourceService {
           categoryId: input.category_id,
           language: input.language,
           license: input.license,
+          // Paid Resource Downloads — price_cents: 0 clears the price (and
+          // currency with it); price_cents: undefined leaves both untouched
+          // (Prisma skips undefined update fields), same as every other
+          // field in this data object.
+          priceCents: input.price_cents === 0 ? null : input.price_cents,
+          currency: input.price_cents === 0 ? null : input.currency,
           externalUrl: input.external_url,
           thumbnailUrl: input.thumbnail_url,
           visibility: input.visibility,

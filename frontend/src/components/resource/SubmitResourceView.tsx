@@ -153,6 +153,11 @@ export function SubmitResourceView() {
   const [thumbnailUploadError, setThumbnailUploadError] = useState<string | null>(null);
   const [hasAttemptedContinue, setHasAttemptedContinue] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  // Paid Resource Downloads — same "human-readable amount text, converted
+  // to price_cents only at submit time" pattern as EditResourceView.tsx.
+  const [isFree, setIsFree] = useState(true);
+  const [priceAmount, setPriceAmount] = useState('');
+  const [priceCurrency, setPriceCurrency] = useState<'BDT' | 'USD'>('BDT');
   const abortControllerRef = useRef<AbortController | null>(null);
   const modelAbortControllerRef = useRef<AbortController | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -330,6 +335,8 @@ export function SubmitResourceView() {
       tags,
       language: form.language,
       license: form.license?.trim(),
+      price_cents: isFree ? 0 : Math.round(parseFloat(priceAmount || '0') * 100),
+      currency: isFree ? undefined : priceCurrency,
       external_url: normalizeUrl(form.external_url),
       thumbnail_url: thumbnailFile ? undefined : normalizeUrl(form.thumbnail_url),
       dataset: form.type === 'dataset' ? dataset : undefined,
@@ -945,6 +952,61 @@ export function SubmitResourceView() {
                 file={thumbnailFile}
                 onFileChange={setThumbnailFile}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Price</Label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsFree(true)}
+                  className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    isFree ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  Free
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsFree(false)}
+                  className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    !isFree ? 'border-brand bg-brand/10 text-brand' : 'border-border text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  Paid
+                </button>
+              </div>
+              {!isFree ? (
+                <div className="flex gap-2 pt-1">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={priceAmount}
+                    onChange={(event) => setPriceAmount(event.target.value)}
+                    placeholder="Amount"
+                    className="max-w-40"
+                  />
+                  <div className="flex gap-1">
+                    {(['BDT', 'USD'] as const).map((currency) => (
+                      <button
+                        key={currency}
+                        type="button"
+                        onClick={() => setPriceCurrency(currency)}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          priceCurrency === currency
+                            ? 'border-brand bg-brand/10 text-brand'
+                            : 'border-border text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        {currency}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="pt-1 text-xs text-muted-foreground">Anyone can download this resource for free.</p>
+              )}
             </div>
 
             <div className="space-y-1.5">

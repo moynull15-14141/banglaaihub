@@ -1,32 +1,14 @@
-import { BookOpen, Boxes, Database, FileText, Folder, MessageSquare, Newspaper, Wrench } from 'lucide-react';
+import { Folder } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { STAT_CARD_ICONS, STAT_CARD_LABELS } from '@/lib/constants/resourceTypes';
+
+const TYPE_ICONS = STAT_CARD_ICONS as Record<string, LucideIcon>;
+const TYPE_LABELS = STAT_CARD_LABELS as Record<string, string>;
 
 interface ResourceTypeBreakdownProps {
   data: Record<string, number>;
 }
-
-const TYPE_LABELS: Record<string, string> = {
-  dataset: 'Datasets',
-  paper: 'Papers',
-  tool: 'Tools',
-  tutorial: 'Tutorials',
-  prompt: 'Prompts',
-  project: 'Projects',
-  news: 'News',
-  model: 'Models',
-};
-
-const TYPE_ICONS: Record<string, LucideIcon> = {
-  dataset: Database,
-  paper: FileText,
-  tool: Wrench,
-  tutorial: BookOpen,
-  prompt: MessageSquare,
-  project: Folder,
-  news: Newspaper,
-  model: Boxes,
-};
 
 // A single hue, ordered by magnitude with direct value labels — this is a
 // magnitude comparison across category names (already identified by their

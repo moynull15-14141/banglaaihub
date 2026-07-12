@@ -156,6 +156,31 @@ export async function confirmResourceDownload(slug: string, fileId?: string): Pr
   );
 }
 
+// GET /resources/:slug/preview — a small "look before you pay" content
+// snippet for the checkout page, no purchase required.
+export interface ResourcePreview {
+  available: boolean;
+  content: string | null;
+  truncated: boolean;
+}
+
+export async function getResourcePreview(slug: string): Promise<ResourcePreview> {
+  const response = await apiClient.get<ApiSuccessResponse<ResourcePreview>>(
+    `/resources/${encodeURIComponent(slug)}/preview`,
+  );
+  return response.data.data;
+}
+
+// POST /resources/:slug/purchase — opens an SSLCommerz session for a priced
+// resource; returns the gateway's own hosted payment page URL for a full
+// browser redirect (never build a custom card form for this).
+export async function purchaseResource(slug: string): Promise<{ gateway_url: string }> {
+  const response = await apiClient.post<ApiSuccessResponse<{ gateway_url: string }>>(
+    `/resources/${encodeURIComponent(slug)}/purchase`,
+  );
+  return response.data.data;
+}
+
 // POST /resources/:slug/share — logs a ResourceAnalytics 'share' event.
 // Fire-and-forget from the caller's perspective; never blocks the actual
 // share action (opening a share link / copying to clipboard).

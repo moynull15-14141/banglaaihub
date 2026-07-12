@@ -7,11 +7,11 @@ interface AdminShellProps {
 
 export function AdminShell({ children }: AdminShellProps) {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       <AdminSidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <AdminTopbar />
-        <main className="flex-1 bg-muted/30">{children}</main>
+        <main className="flex-1 overflow-y-auto bg-muted/30">{children}</main>
       </div>
     </div>
   );

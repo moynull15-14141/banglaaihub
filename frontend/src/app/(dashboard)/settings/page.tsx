@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { Bell, CheckCircle2, Info, Monitor, Moon, Shield, Sun, User as UserIcon } from 'lucide-react';
+import { Bell, CheckCircle2, Info, Monitor, Moon, Shield, Sun, User as UserIcon, Wallet } from 'lucide-react';
 import { PageContainer } from '@/components/common/PageContainer';
 import { SectionHeader } from '@/components/common/SectionHeader';
 import { LoadingScreen } from '@/components/common/LoadingScreen';
@@ -29,6 +29,7 @@ const THEME_OPTIONS = [
 
 const SETTINGS_TABS = [
   { value: 'profile', label: 'Profile', icon: UserIcon },
+  { value: 'wallet', label: 'Wallet', icon: Wallet },
   { value: 'appearance', label: 'Appearance', icon: Sun },
   { value: 'notifications', label: 'Notifications', icon: Bell },
   { value: 'security', label: 'Security', icon: Shield },
@@ -138,6 +139,22 @@ export default function SettingsPage() {
                     )}
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="wallet" className="mt-0">
+            <Card>
+              <CardHeader>
+                <CardTitle>Wallet</CardTitle>
+                <CardDescription>
+                  Earnings from your paid resources, plus withdrawal requests.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={ROUTES.settingsWallet}>Open wallet</Link>
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

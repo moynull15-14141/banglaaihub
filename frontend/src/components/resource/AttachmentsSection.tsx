@@ -14,12 +14,23 @@ import type { ResourceAttachment } from '@/types/resource';
 interface AttachmentsSectionProps {
   slug: string;
   attachments: ResourceAttachment[];
+  priceCents?: number | null;
+  currency?: 'BDT' | 'USD' | null;
+  isPurchased?: boolean;
+  isOwner?: boolean;
 }
 
 // Universal multi-file attachments list (Part 3) — every attachment shows an
 // icon, filename, size, type, uploaded date, a Download button (signed URL,
 // never a raw R2 key), and a Preview button for PDFs (in-browser, Part 4).
-export function AttachmentsSection({ slug, attachments }: AttachmentsSectionProps) {
+export function AttachmentsSection({
+  slug,
+  attachments,
+  priceCents,
+  currency,
+  isPurchased,
+  isOwner,
+}: AttachmentsSectionProps) {
   const [previewFile, setPreviewFile] = useState<ResourceAttachment | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -69,7 +80,17 @@ export function AttachmentsSection({ slug, attachments }: AttachmentsSectionProp
                     Preview
                   </Button>
                 ) : null}
-                <DownloadButton slug={slug} fileId={file.id} label="Download" variant="outline" size="sm" />
+                <DownloadButton
+                  slug={slug}
+                  fileId={file.id}
+                  label="Download"
+                  variant="outline"
+                  size="sm"
+                  priceCents={priceCents}
+                  currency={currency}
+                  isPurchased={isPurchased}
+                  isOwner={isOwner}
+                />
               </div>
             </div>
           );

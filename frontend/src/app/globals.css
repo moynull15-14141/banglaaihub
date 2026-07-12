@@ -8,8 +8,12 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  /* Site Font Engine — heading/mono resolve their OWN custom property first
+     (set on <body> by layout.tsx's admin-override <style> block, when a
+     slot has been configured), falling back to today's defaults
+     (Geist Mono / the sans font) exactly as before when unconfigured. */
+  --font-mono: var(--font-mono, var(--font-geist-mono));
+  --font-heading: var(--font-heading, var(--font-sans));
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -50,76 +54,153 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Every color below is declared twice: a hex/rgba fallback first, then the
+   oklch() value. A browser that can't parse oklch() (anything older than
+   Chrome 111 / the equivalent WebView — common on older Android phones)
+   treats that single declaration as invalid and keeps the first (hex) one;
+   a browser that supports oklch() simply lets the second declaration win,
+   same as any other repeated CSS property. Without this, unsupported
+   browsers silently drop EVERY color in the theme (background, text, icon
+   strokes via currentColor, borders) to inconsistent UA defaults — which is
+   exactly what produced invisible icons and background/text blending into
+   each other on an older phone during testing. Values generated with the
+   real OKLCH -> sRGB matrices, not eyeballed. */
 :root {
+  --background: #ffffff;
   --background: oklch(1 0 0);
+  --foreground: #0a0a0a;
   --foreground: oklch(0.145 0 0);
+  --card: #ffffff;
   --card: oklch(1 0 0);
+  --card-foreground: #0a0a0a;
   --card-foreground: oklch(0.145 0 0);
+  --popover: #ffffff;
   --popover: oklch(1 0 0);
+  --popover-foreground: #0a0a0a;
   --popover-foreground: oklch(0.145 0 0);
+  --primary: #171717;
   --primary: oklch(0.205 0 0);
+  --primary-foreground: #fafafa;
   --primary-foreground: oklch(0.985 0 0);
+  --secondary: #f5f5f5;
   --secondary: oklch(0.97 0 0);
+  --secondary-foreground: #171717;
   --secondary-foreground: oklch(0.205 0 0);
+  --muted: #f5f5f5;
   --muted: oklch(0.97 0 0);
+  --muted-foreground: #737373;
   --muted-foreground: oklch(0.556 0 0);
+  --accent: #f5f5f5;
   --accent: oklch(0.97 0 0);
+  --accent-foreground: #171717;
   --accent-foreground: oklch(0.205 0 0);
+  --destructive: #e7000b;
   --destructive: oklch(0.577 0.245 27.325);
+  --border: #e5e5e5;
   --border: oklch(0.922 0 0);
+  --input: #e5e5e5;
   --input: oklch(0.922 0 0);
+  --ring: #615fff;
   --ring: oklch(0.585 0.233 277.117);
+  --brand: #4f39f6;
   --brand: oklch(0.511 0.262 276.966);
+  --brand-foreground: #fafafa;
   --brand-foreground: oklch(0.985 0 0);
+  --chart-1: #4f39f6;
   --chart-1: oklch(0.511 0.262 276.966);
+  --chart-2: #737373;
   --chart-2: oklch(0.556 0 0);
+  --chart-3: #525252;
   --chart-3: oklch(0.439 0 0);
+  --chart-4: #404040;
   --chart-4: oklch(0.371 0 0);
+  --chart-5: #262626;
   --chart-5: oklch(0.269 0 0);
   --radius: 0.75rem;
+  --sidebar: #fafafa;
   --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: #0a0a0a;
   --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: #4f39f6;
   --sidebar-primary: oklch(0.511 0.262 276.966);
+  --sidebar-primary-foreground: #fafafa;
   --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: #f5f5f5;
   --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: #171717;
   --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: #e5e5e5;
   --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: #615fff;
   --sidebar-ring: oklch(0.585 0.233 277.117);
 }
 
 .dark {
+  --background: #0a0a0a;
   --background: oklch(0.145 0 0);
+  --foreground: #fafafa;
   --foreground: oklch(0.985 0 0);
+  --card: #171717;
   --card: oklch(0.205 0 0);
+  --card-foreground: #fafafa;
   --card-foreground: oklch(0.985 0 0);
+  --popover: #171717;
   --popover: oklch(0.205 0 0);
+  --popover-foreground: #fafafa;
   --popover-foreground: oklch(0.985 0 0);
+  --primary: #e5e5e5;
   --primary: oklch(0.922 0 0);
+  --primary-foreground: #171717;
   --primary-foreground: oklch(0.205 0 0);
+  --secondary: #262626;
   --secondary: oklch(0.269 0 0);
+  --secondary-foreground: #fafafa;
   --secondary-foreground: oklch(0.985 0 0);
+  --muted: #262626;
   --muted: oklch(0.269 0 0);
+  --muted-foreground: #a1a1a1;
   --muted-foreground: oklch(0.708 0 0);
+  --accent: #262626;
   --accent: oklch(0.269 0 0);
+  --accent-foreground: #fafafa;
   --accent-foreground: oklch(0.985 0 0);
+  --destructive: #ff6467;
   --destructive: oklch(0.704 0.191 22.216);
+  --border: rgba(255, 255, 255, 0.1);
   --border: oklch(1 0 0 / 10%);
+  --input: rgba(255, 255, 255, 0.15);
   --input: oklch(1 0 0 / 15%);
+  --ring: #7c86ff;
   --ring: oklch(0.673 0.182 276.935);
+  --brand: #7c86ff;
   --brand: oklch(0.673 0.182 276.935);
+  --brand-foreground: #0a0a0a;
   --brand-foreground: oklch(0.145 0 0);
+  --chart-1: #7c86ff;
   --chart-1: oklch(0.673 0.182 276.935);
+  --chart-2: #737373;
   --chart-2: oklch(0.556 0 0);
+  --chart-3: #525252;
   --chart-3: oklch(0.439 0 0);
+  --chart-4: #404040;
   --chart-4: oklch(0.371 0 0);
+  --chart-5: #262626;
   --chart-5: oklch(0.269 0 0);
+  --sidebar: #171717;
   --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: #fafafa;
   --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #7c86ff;
   --sidebar-primary: oklch(0.673 0.182 276.935);
+  --sidebar-primary-foreground: #0a0a0a;
   --sidebar-primary-foreground: oklch(0.145 0 0);
+  --sidebar-accent: #262626;
   --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: #fafafa;
   --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: rgba(255, 255, 255, 0.1);
   --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: #7c86ff;
   --sidebar-ring: oklch(0.673 0.182 276.935);
 }
 

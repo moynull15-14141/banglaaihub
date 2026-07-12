@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { DownloadButton } from '@/components/resource/DownloadButton';
 import { PdfPreviewDialog } from '@/components/resource/PdfPreviewDialog';
 import { getResourceDownload } from '@/lib/api/resources';
+import { useAuth } from '@/lib/hooks/useAuth';
 import { PROMPT_ROLE_OPTIONS } from '@/lib/constants/resourceTypes';
 import { formatBytes, formatNumber } from '@/lib/utils/format';
 import type { Resource } from '@/types/resource';
@@ -33,6 +34,14 @@ interface ResourceTypeMetadataProps {
 }
 
 export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
+  const { user } = useAuth();
+  const isOwner = Boolean(user && resource.author?.id === user.id);
+  const priceProps = {
+    priceCents: resource.price_cents,
+    currency: resource.currency,
+    isPurchased: resource.is_purchased,
+    isOwner,
+  };
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [contentCopied, setContentCopied] = useState(false);
@@ -72,7 +81,7 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
           </dl>
         </Card>
         {dataset.file_url ? (
-          <DownloadButton slug={resource.slug} label="Download dataset" />
+          <DownloadButton slug={resource.slug} label="Download dataset" {...priceProps} />
         ) : null}
       </div>
     );
@@ -104,7 +113,7 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
               <Button type="button" variant="outline" size="sm" onClick={() => void handlePreviewPdf()}>
                 Preview
               </Button>
-              <DownloadButton slug={resource.slug} label="Download PDF" size="sm" />
+              <DownloadButton slug={resource.slug} label="Download PDF" size="sm" {...priceProps} />
             </>
           ) : null}
           {paper.code_url ? (
@@ -140,7 +149,7 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
         </Card>
         <div className="flex flex-wrap gap-2">
           {tool.file_url ? (
-            <DownloadButton slug={resource.slug} label="Download asset" size="sm" />
+            <DownloadButton slug={resource.slug} label="Download asset" size="sm" {...priceProps} />
           ) : null}
           {tool.demo_url ? (
             <Button asChild variant="outline" size="sm">
@@ -201,7 +210,9 @@ export function ResourceTypeMetadata({ resource }: ResourceTypeMetadataProps) {
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          {model.file_url ? <DownloadButton slug={resource.slug} label="Download model" size="sm" /> : null}
+          {model.file_url ? (
+          <DownloadButton slug={resource.slug} label="Download model" size="sm" {...priceProps} />
+        ) : null}
           {model.demo_url ? (
             <Button asChild variant="outline" size="sm">
               <a href={model.demo_url} target="_blank" rel="noopener noreferrer">

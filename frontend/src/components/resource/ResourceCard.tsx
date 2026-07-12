@@ -15,7 +15,7 @@ import { ROUTES, resourceHref } from '@/lib/constants/routes';
 import { RESOURCE_TYPE_LABELS, STATUS_BADGE_VARIANT, STATUS_LABEL } from '@/lib/constants/resourceTypes';
 import { useDeleteResource, useToggleResourceBookmark } from '@/lib/hooks/useResources';
 import { getFileBadgeLabel } from '@/lib/utils/fileIcons';
-import { formatBytes, formatDate, truncate } from '@/lib/utils/format';
+import { formatBytes, formatDate, formatPrice, truncate } from '@/lib/utils/format';
 import type { Resource } from '@/types/resource';
 import type { SearchResult } from '@/types/search';
 
@@ -61,6 +61,11 @@ export function ResourceCard({
   const visibility = 'visibility' in resource ? resource.visibility : null;
   const updatedAt = 'updated_at' in resource ? resource.updated_at : null;
   const VisibilityIcon = visibility ? VISIBILITY_ICON[visibility] : null;
+  // SearchResult doesn't carry pricing (Meilisearch index has no
+  // price_cents/currency field yet) — a card rendered from a search hit
+  // simply shows no price badge until that's added, rather than guessing.
+  const priceCents = 'price_cents' in resource ? resource.price_cents : null;
+  const currency = 'currency' in resource ? resource.currency : null;
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const deleteMutation = useDeleteResource();
@@ -91,7 +96,12 @@ export function ResourceCard({
 
   return (
     <Card className="flex h-full flex-col gap-3 overflow-hidden py-0 sm:gap-4">
-      <Link href={href} className="block overflow-hidden">
+      <Link href={href} className="relative block overflow-hidden">
+        {priceCents && currency ? (
+          <Badge variant="brand" className="absolute top-2 right-2 z-10">
+            {formatPrice(priceCents, currency)}
+          </Badge>
+        ) : null}
         <div className="flex h-24 items-center justify-center overflow-hidden bg-muted sm:h-32">
           {resource.thumbnail_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- arbitrary user-supplied external URL, no fixed domain to allowlist for next/image

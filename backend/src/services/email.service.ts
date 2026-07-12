@@ -126,6 +126,71 @@ export class EmailService {
     );
   }
 
+  // Paid Resource Downloads — same "notification + email" pairing as
+  // contributor-application events above, since these are money events
+  // (arguably more important to reach an inbox than an in-app bell icon).
+  static async sendPaymentReceived(
+    to: string,
+    userName: string,
+    resourceTitle: string,
+    amount: string,
+    authorEarnings: string,
+  ): Promise<void> {
+    await EmailService.send(to, `You made a sale — "${resourceTitle}"`, 'paymentReceived', {
+      userName,
+      resourceTitle,
+      amount,
+      authorEarnings,
+      walletUrl: `${env.FRONTEND_URL}/settings/wallet`,
+    });
+  }
+
+  static async sendPurchaseCompleted(
+    to: string,
+    userName: string,
+    resourceTitle: string,
+    resourceSlug: string,
+    amount: string,
+  ): Promise<void> {
+    await EmailService.send(to, `Your purchase of "${resourceTitle}" is complete`, 'purchaseCompleted', {
+      userName,
+      resourceTitle,
+      amount,
+      resourceUrl: `${env.FRONTEND_URL}/resources/${resourceSlug}`,
+    });
+  }
+
+  static async sendPayoutApproved(to: string, userName: string, amount: string): Promise<void> {
+    await EmailService.send(to, 'Withdrawal request approved', 'payoutApproved', {
+      userName,
+      amount,
+      walletUrl: `${env.FRONTEND_URL}/settings/wallet`,
+    });
+  }
+
+  static async sendPayoutRejected(to: string, userName: string, amount: string, notes?: string): Promise<void> {
+    await EmailService.send(to, 'An update on your withdrawal request', 'payoutRejected', {
+      userName,
+      amount,
+      notes: notes ?? 'No additional notes were provided.',
+    });
+  }
+
+  static async sendPayoutPaid(
+    to: string,
+    userName: string,
+    amount: string,
+    method: string,
+    reference: string,
+  ): Promise<void> {
+    await EmailService.send(to, 'Your withdrawal has been sent', 'payoutPaid', {
+      userName,
+      amount,
+      method,
+      reference,
+    });
+  }
+
   private static async send(
     to: string,
     subject: string,

@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import * as payoutController from '../controllers/payout.controller';
 import * as usersController from '../controllers/users.controller';
 import { authenticate, authenticateOptional } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { createRateLimiter } from '../middleware/rateLimiter';
 import { avatarUpload, coverUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
+import { requestPayoutSchema } from '../validators/payout.validator';
 import {
   addBookmarkSchema,
   heatmapQuerySchema,
@@ -42,6 +44,11 @@ router.post('/me/avatar', authenticate, avatarUpload.single('file'), usersContro
 router.post('/me/cover-image', authenticate, coverUpload.single('file'), usersController.uploadCoverImage);
 router.delete('/me/cover-image', authenticate, usersController.removeCoverImage);
 router.get('/me/dashboard', authenticate, usersController.getDashboard);
+// Paid Resource Downloads (Phase C) — wallet balance/history and
+// self-service withdrawal requests.
+router.get('/me/wallet', authenticate, payoutController.getMyWallet);
+router.get('/me/payouts', authenticate, payoutController.listMyPayouts);
+router.post('/me/payouts', authenticate, validate(requestPayoutSchema), payoutController.requestPayout);
 router.get('/me/bookmarks', authenticate, usersController.getMyBookmarks);
 router.post(
   '/me/bookmarks',

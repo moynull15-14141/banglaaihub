@@ -48,6 +48,12 @@ export interface SearchDocument {
   created_at: string;
   updated_at: string;
   thumbnail_url: string | null;
+  // Paid Resource Downloads — is_free is a derived boolean (price_cents is
+  // null/0) kept as its own filterable field since MeiliSearch filters read
+  // more naturally as `is_free = true` than `price_cents = 0`.
+  is_free: boolean;
+  price_cents: number | null;
+  currency: string | null;
 }
 
 function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
@@ -81,6 +87,9 @@ function toSearchDocument(resource: ResourceWithRelations): SearchDocument {
     created_at: resource.createdAt.toISOString(),
     updated_at: resource.updatedAt.toISOString(),
     thumbnail_url: resource.thumbnailUrl,
+    is_free: !resource.priceCents,
+    price_cents: resource.priceCents,
+    currency: resource.currency,
   };
 }
 
@@ -119,6 +128,8 @@ async function toSearchResultDto(doc: SearchDocument): Promise<Record<string, un
     review_count: doc.review_count,
     published_at: doc.published_at,
     thumbnail_url: await StorageService.resolveUrl(doc.thumbnail_url),
+    price_cents: doc.price_cents,
+    currency: doc.currency,
   };
 }
 
@@ -185,6 +196,7 @@ export class SearchService {
         'tags',
         'author_name',
         'author_is_verified',
+        'is_free',
       ],
       sortableAttributes: [
         'view_count',
@@ -271,6 +283,8 @@ export class SearchService {
     if (query.tags && query.tags.length > 0) {
       filters.push(`(${query.tags.map((tag) => `tags = "${escapeFilterValue(tag)}"`).join(' OR ')})`);
     }
+    if (query.pricing === 'free') filters.push('is_free = true');
+    if (query.pricing === 'paid') filters.push('is_free = false');
 
     // doc 10's filterableAttributes only includes category_id (not a slug) —
     // the query param is a human-readable slug (per doc 11's example

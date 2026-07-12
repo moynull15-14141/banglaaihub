@@ -70,6 +70,11 @@ resourcesRouter.post(
   resourceUpload.single('file'),
   resourcesController.uploadFile,
 );
+// Paid Resource Downloads — the checkout page's "preview before you pay"
+// snippet. authenticateOptional (like the visibility check it shares with
+// download below) since a preview needs no purchase, only that the
+// resource itself is viewable.
+resourcesRouter.get('/:slug/preview', authenticateOptional, resourcesController.preview);
 resourcesRouter.get(
   '/:slug/download',
   authenticateOptional,
@@ -83,6 +88,10 @@ resourcesRouter.post(
   resourcesController.confirmDownload,
 );
 resourcesRouter.post('/:slug/share', authenticateOptional, resourcesController.share);
+// Paid Resource Downloads (Phase B) — real auth required (not
+// authenticateOptional like the routes above), since you can't check out
+// as an anonymous buyer.
+resourcesRouter.post('/:slug/purchase', authenticate, resourcesController.purchase);
 
 // Phase 5A-1 — Content Platform. Ownership vs. content:edit_any-equivalent
 // is resolved inside the service (assertCanModify, same pattern as PUT

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   addResourceAttachment,
   addResourceBookmark,
@@ -23,13 +23,36 @@ import {
   type ReportReason,
   type UploadProgressInfo,
 } from '@/lib/api/resources';
-import type { ListResourcesParams, UpdateResourceInput, UploadKind } from '@/types/resource';
+import { STAT_CARD_TYPES } from '@/lib/constants/resourceTypes';
+import type { ListResourcesParams, ResourceType, UpdateResourceInput, UploadKind } from '@/types/resource';
 
 export function useResources(params: ListResourcesParams = {}) {
   return useQuery({
     queryKey: ['resources', params],
     queryFn: ({ signal }) => listResources(params, signal),
   });
+}
+
+// Homepage "Community statistics" — one lightweight count query per
+// ResourceType, run in parallel via useQueries (not 9 individual
+// useResources() calls, which would call a hook inside a loop). Mirrors the
+// existing Phase 9 decision documented in HomeView.tsx to source counts from
+// meta.total on the public /resources list endpoint rather than adding a new
+// aggregate endpoint.
+export function useResourceTypeCounts() {
+  const results = useQueries({
+    queries: STAT_CARD_TYPES.map((type) => ({
+      queryKey: ['resources', { type, limit: 1 }],
+      queryFn: ({ signal }: { signal: AbortSignal }) => listResources({ type, limit: 1 }, signal),
+    })),
+  });
+
+  const isLoading = results.some((result) => result.isLoading);
+  const counts = Object.fromEntries(
+    STAT_CARD_TYPES.map((type, index) => [type, results[index]?.data?.meta.total ?? 0]),
+  ) as Record<ResourceType, number>;
+
+  return { counts, isLoading };
 }
 
 export function useResource(slug: string) {

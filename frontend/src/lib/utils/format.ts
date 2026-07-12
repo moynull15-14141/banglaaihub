@@ -15,6 +15,18 @@ export function formatNumber(value: number): string {
   }).format(value);
 }
 
+// Paid Resource Downloads — priceCents is always a whole-currency-unit
+// integer times 100 (e.g. 50000 = 500.00 BDT), same "store cents, format on
+// read" convention as any other money value.
+export function formatPrice(priceCents: number, currency: 'BDT' | 'USD'): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    currencyDisplay: currency === 'BDT' ? 'code' : 'symbol',
+    minimumFractionDigits: 2,
+  }).format(priceCents / 100);
+}
+
 export function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength).trimEnd()}…`;

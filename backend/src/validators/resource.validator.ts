@@ -60,6 +60,8 @@ const SORT_OPTIONS = [
   'alpha',
 ] as const;
 const VISIBILITIES = ['public', 'unlisted', 'private'] as const;
+// Paid Resource Downloads — must mirror the Prisma `Currency` enum exactly.
+const CURRENCIES = ['BDT', 'USD'] as const;
 
 // Phase 5A-2 (SEO Engine) — article-only permalink override. Generic hygiene
 // blacklist (not a routing-collision list — /articles/[slug] is nested, so
@@ -99,6 +101,13 @@ export const createResourceSchema = z.object({
   external_url: z.string().url().optional(),
   thumbnail_url: z.string().url().optional(),
   visibility: z.enum(VISIBILITIES).optional(),
+  // Paid Resource Downloads — both omitted (or price_cents: 0) means free,
+  // today's behavior unchanged. Pairing (currency required alongside a
+  // non-zero price_cents) is enforced in ResourceService, not here, since
+  // updateResourceSchema is a .partial() of this and can legitimately send
+  // just one of the two on an already-priced resource.
+  price_cents: z.number().int().min(0).optional(),
+  currency: z.enum(CURRENCIES).optional(),
   dataset: datasetInputSchema.optional(),
   paper: paperInputSchema.optional(),
   tool: toolInputSchema.optional(),

@@ -34,6 +34,8 @@ export const searchQuerySchema = z.object({
   author: z.string().max(50).optional(),
   verified: z.literal('true').optional(),
   tags: commaSeparatedTags.optional(),
+  // Paid Resource Downloads — "only show free" / "only show paid" toggle.
+  pricing: z.enum(['free', 'paid']).optional(),
 });
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
 

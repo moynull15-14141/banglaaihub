@@ -1,3 +1,6 @@
+import { BookOpen, Boxes, Database, FileText, Folder, MessageSquare, Newspaper, PenLine, Wrench } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { ROUTES } from '@/lib/constants/routes';
 import type {
   ArticleContentType,
   ModelFormat,
@@ -166,3 +169,58 @@ export const ARTICLE_CONTENT_TYPE_OPTIONS: { value: ArticleContentType; label: s
 export const ARTICLE_CONTENT_TYPE_LABELS: Record<ArticleContentType, string> = Object.fromEntries(
   ARTICLE_CONTENT_TYPE_OPTIONS.map(({ value, label }) => [value, label]),
 ) as Record<ArticleContentType, string>;
+
+// --- "One card/row per ResourceType" UI (all 9 types, including `article` —
+// deliberately separate from RESOURCE_TYPE_OPTIONS above, which excludes
+// article on purpose since it isn't created via the general Submit wizard).
+// Shared by ResourceTypeBreakdown.tsx (admin dashboard) and the homepage
+// stat cards so both read from one map instead of two independent copies.
+export const STAT_CARD_TYPES: ResourceType[] = [
+  'dataset',
+  'paper',
+  'tool',
+  'model',
+  'article',
+  'tutorial',
+  'prompt',
+  'project',
+  'news',
+];
+
+// Plural, count-friendly labels ("Datasets", not "Dataset") — distinct from
+// RESOURCE_TYPE_LABELS above, which is singular for form-dropdown use.
+export const STAT_CARD_LABELS: Record<ResourceType, string> = {
+  dataset: 'Datasets',
+  paper: 'Papers',
+  tool: 'Tools',
+  model: 'Models',
+  article: 'Articles',
+  tutorial: 'Tutorials',
+  prompt: 'Prompts',
+  project: 'Projects',
+  news: 'News',
+};
+
+export const STAT_CARD_ICONS: Record<ResourceType, LucideIcon> = {
+  dataset: Database,
+  paper: FileText,
+  tool: Wrench,
+  model: Boxes,
+  article: PenLine,
+  tutorial: BookOpen,
+  prompt: MessageSquare,
+  project: Folder,
+  news: Newspaper,
+};
+
+export const STAT_CARD_ROUTES: Record<ResourceType, string> = {
+  dataset: ROUTES.datasets,
+  paper: ROUTES.papers,
+  tool: ROUTES.tools,
+  model: ROUTES.models,
+  article: ROUTES.articles,
+  tutorial: ROUTES.tutorials,
+  prompt: ROUTES.prompts,
+  project: ROUTES.projects,
+  news: ROUTES.news,
+};

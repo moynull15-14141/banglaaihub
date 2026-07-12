@@ -30,6 +30,9 @@ export interface SearchResult {
   review_count: number;
   published_at: string | null;
   thumbnail_url: string | null;
+  // Paid Resource Downloads — null/null means free.
+  price_cents: number | null;
+  currency: 'BDT' | 'USD' | null;
 }
 
 export interface SearchParams {
@@ -43,6 +46,7 @@ export interface SearchParams {
   author?: string;
   verified?: true;
   tags?: string[];
+  pricing?: 'free' | 'paid';
   page?: number;
   limit?: number;
 }

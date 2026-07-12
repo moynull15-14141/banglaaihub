@@ -214,6 +214,9 @@ export interface Resource {
   visibility: ResourceVisibility;
   language: ResourceLanguage;
   license: string | null;
+  // Paid Resource Downloads — both null means free (the resource's default).
+  price_cents: number | null;
+  currency: 'BDT' | 'USD' | null;
   external_url: string | null;
   thumbnail_url: string | null;
   documentation_url: string | null;
@@ -243,6 +246,10 @@ export interface Resource {
   // — omitted (undefined) from plain listing endpoints, not computed there.
   is_bookmarked?: boolean;
   is_liked?: boolean;
+  // Only present on GET /resources/:slug for the authenticated requester,
+  // and only computed at all when the resource is priced — see
+  // ResourceService.getBySlug()'s own comment.
+  is_purchased?: boolean;
   // Only present on GET /users/me/bookmarks — when the bookmark itself was
   // created, not the resource.
   bookmarked_at?: string;
@@ -355,6 +362,10 @@ export interface CreateResourceInput {
   tags?: string[];
   language?: ResourceLanguage;
   license?: string;
+  // Paid Resource Downloads — price_cents: 0 (or omitted) is free. currency
+  // is required alongside a non-zero price_cents (enforced server-side).
+  price_cents?: number;
+  currency?: 'BDT' | 'USD';
   external_url?: string;
   thumbnail_url?: string;
   visibility?: ResourceVisibility;

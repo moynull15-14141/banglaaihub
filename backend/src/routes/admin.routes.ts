@@ -1,10 +1,17 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller';
+import * as paymentSettingsController from '../controllers/paymentSettings.controller';
+import * as payoutController from '../controllers/payout.controller';
 import { authenticate } from '../middleware/authenticate';
 import { authorize } from '../middleware/authorize';
 import { createRateLimiter } from '../middleware/rateLimiter';
 import { feedAnnouncementImageUpload } from '../middleware/upload';
 import { validate } from '../middleware/validate';
+import {
+  listPayoutsQuerySchema,
+  markPayoutPaidSchema,
+  payoutDecisionSchema,
+} from '../validators/payout.validator';
 import {
   createBadgeSchema,
   grantBadgeSchema,
@@ -269,6 +276,81 @@ router.post(
   authenticate,
   authorize('system:configure'),
   adminController.rebuildSearchIndex,
+);
+
+// Paid Resource Downloads (Phase A) — manual purchase-grant support tool,
+// see manuallyGrantResourcePurchase()'s own comment. system:configure
+// (super_admin only) — moves wallet balances, same tier as every other
+// sitewide-infra/financial action in this file.
+router.post(
+  '/resource-purchases/manual',
+  authenticate,
+  authorize('system:configure'),
+  adminController.manuallyGrantResourcePurchase,
+);
+
+// Paid Resource Downloads — full sales ledger + platform revenue summary.
+// system:configure (super_admin only) — you asked for this to be
+// super_admin-visible specifically, not the broader admin tier payouts uses.
+router.get(
+  '/resource-purchases',
+  authenticate,
+  authorize('system:configure'),
+  adminController.listResourcePurchases,
+);
+router.get(
+  '/resource-purchases/summary',
+  authenticate,
+  authorize('system:configure'),
+  adminController.getRevenueSummary,
+);
+
+// SSLCommerz credentials, configurable from the admin panel instead of only
+// via backend .env — system:configure (super_admin only), same tier as
+// every other sitewide-infra setting.
+router.get(
+  '/payment-settings/sslcommerz',
+  authenticate,
+  authorize('system:configure'),
+  paymentSettingsController.getSslcommerzSettings,
+);
+router.put(
+  '/payment-settings/sslcommerz',
+  authenticate,
+  authorize('system:configure'),
+  paymentSettingsController.saveSslcommerzSettings,
+);
+
+// Paid Resource Downloads (Phase C) — payout approval queue. payout:manage
+// (admin/super_admin) — moves wallet balances, same tier as every other
+// financial action in this file.
+router.get(
+  '/payouts',
+  authenticate,
+  authorize('payout:manage'),
+  validate(listPayoutsQuerySchema, 'query'),
+  payoutController.listPayoutsForAdmin,
+);
+router.post(
+  '/payouts/:id/approve',
+  authenticate,
+  authorize('payout:manage'),
+  validate(payoutDecisionSchema),
+  payoutController.approvePayout,
+);
+router.post(
+  '/payouts/:id/reject',
+  authenticate,
+  authorize('payout:manage'),
+  validate(payoutDecisionSchema),
+  payoutController.rejectPayout,
+);
+router.post(
+  '/payouts/:id/mark-paid',
+  authenticate,
+  authorize('payout:manage'),
+  validate(markPayoutPaidSchema),
+  payoutController.markPayoutPaid,
 );
 
 // --- Feed engine (Phase 4D) ---------------------------------------------------------

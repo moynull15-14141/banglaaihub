@@ -30,6 +30,14 @@ const envSchema = z.object({
 
   EMAIL_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().email().optional(),
+
+  // Paid Resource Downloads (Phase B) — sandbox credentials are free/instant
+  // from SSLCommerz; going live needs your own approved merchant account.
+  // Optional (like R2/email above) so the app still boots without them —
+  // SslcommerzService throws a clear 503 if a payment route is hit unconfigured.
+  SSLCOMMERZ_STORE_ID: z.string().optional(),
+  SSLCOMMERZ_STORE_PASSWORD: z.string().optional(),
+  SSLCOMMERZ_IS_LIVE: z.enum(['true', 'false']).default('false'),
 });
 
 function loadEnv(): z.infer<typeof envSchema> {

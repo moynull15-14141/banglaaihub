@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
+import { SiteFontStyles } from '@/components/common/SiteFontStyles';
+import { getActiveFontsForLayout } from '@/lib/server/siteFonts';
 import { Providers } from './providers';
 import './globals.css';
 
@@ -44,13 +46,18 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const siteFonts = await getActiveFontsForLayout();
+
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <SiteFontStyles fonts={siteFonts} />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Providers>{children}</Providers>
       </body>
